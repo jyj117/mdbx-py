@@ -8,6 +8,7 @@ version = "0.1.0a1"
 description = "High-performance CPython C-API bindings for an embedded libmdbx"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = ["typing_extensions>=4.15; python_version < '3.15'"]
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE", "vendor/libmdbx/LICENSE", "vendor/libmdbx/NOTICE", "vendor/libmdbx/COPYRIGHT"]
 authors = [{name = "clibmdbx contributors"}]

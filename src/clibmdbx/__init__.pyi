@@ -1,4 +1,5 @@
 from typing import Any, Iterable, Iterator, Mapping, Sequence, final
+from typing_extensions import disjoint_base
 
 __version__: str
 LIBMDBX_VERSION: str
@@ -129,6 +130,7 @@ class DiskError(Error): ...
 class ForkError(Error): ...
 class ClosedError(Error): ...
 
+@disjoint_base
 class Environment:
     def __init__(self, path: Any, *, flags: int = ..., mode: int = ..., max_readers: int = ...,
                  max_dbs: int = ..., geometry: Sequence[int] | None = ...,

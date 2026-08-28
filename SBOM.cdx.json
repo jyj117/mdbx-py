@@ -31,10 +31,28 @@
         {"type": "vcs", "url": "https://github.com/Mithril-mine/libmdbx/tree/v0.14.3"},
         {"type": "distribution", "url": "https://libmdbx.dqdkfa.ru/release/libmdbx-amalgamated-0.14.3.tar.xz"}
       ]
+    },
+    {
+      "type": "library",
+      "name": "typing_extensions",
+      "purl": "pkg:pypi/typing_extensions",
+      "scope": "required",
+      "licenses": [{"license": {"id": "PSF-2.0"}}],
+      "properties": [
+        {
+          "name": "clibmdbx:requirement",
+          "value": ">=4.15; python_version < '3.15'"
+        }
+      ],
+      "externalReferences": [
+        {"type": "website", "url": "https://typing-extensions.readthedocs.io/"},
+        {"type": "vcs", "url": "https://github.com/python/typing_extensions"}
+      ]
     }
   ],
   "dependencies": [
-    {"ref": "pkg:pypi/clibmdbx@0.1.0a1", "dependsOn": ["pkg:github/Mithril-mine/libmdbx@v0.14.3"]},
-    {"ref": "pkg:github/Mithril-mine/libmdbx@v0.14.3", "dependsOn": []}
+    {"ref": "pkg:pypi/clibmdbx@0.1.0a1", "dependsOn": ["pkg:github/Mithril-mine/libmdbx@v0.14.3", "pkg:pypi/typing_extensions"]},
+    {"ref": "pkg:github/Mithril-mine/libmdbx@v0.14.3", "dependsOn": []},
+    {"ref": "pkg:pypi/typing_extensions", "dependsOn": []}
   ]
 }

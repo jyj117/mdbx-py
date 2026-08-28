@@ -34,7 +34,13 @@ def test_diagnostics_and_limits() -> None:
 def test_subinterpreter_import_is_explicitly_rejected() -> None:
     interpreter = subinterpreters.create()
     try:
-        with pytest.raises(subinterpreters.RunFailedError, match="main CPython interpreter only"):
+        # CPython 3.12 rejects the extension from the
+        # Py_mod_multiple_interpreters slot before our module-level guard runs;
+        # newer versions may reach the more descriptive binding-owned error.
+        with pytest.raises(
+            subinterpreters.RunFailedError,
+            match="(?:does not support loading in subinterpreters|main CPython interpreter only)",
+        ):
             subinterpreters.run_string(interpreter, "import clibmdbx")
     finally:
         subinterpreters.destroy(interpreter)
