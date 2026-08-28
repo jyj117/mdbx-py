@@ -1,0 +1,40 @@
+{
+  "engines": {
+    "clibmdbx": {
+      "batch_get_ops_per_second_median": 2338724.9010082437,
+      "cursor_scan_ops_per_second_median": 2846492.390729335,
+      "point_get_latency_us_median_run": {
+        "p50": 0.82,
+        "p95": 0.983,
+        "p99": 1.7395
+      },
+      "point_get_ops_per_second": {
+        "max": 1011226.329317734,
+        "median": 836065.8539205518,
+        "min": 687516.5492967977
+      }
+    },
+    "libmdbx_ctypes_0_3_2": {
+      "batch_get_ops_per_second_median": 101273.69124797179,
+      "cursor_scan_ops_per_second_median": 89508.08465133759,
+      "point_get_latency_us_median_run": {
+        "p50": 9.3415,
+        "p95": 13.498000000000001,
+        "p99": 39.925
+      },
+      "point_get_ops_per_second": {
+        "max": 104599.08142664045,
+        "median": 89864.080639383,
+        "min": 70069.40738601948
+      }
+    }
+  },
+  "runs": [
+    "benchmarks/results/wsl-x86_64-audit-run1.json",
+    "benchmarks/results/wsl-x86_64-audit-run2.json",
+    "benchmarks/results/wsl-x86_64-audit-run3.json",
+    "benchmarks/results/wsl-x86_64-audit-run4.json",
+    "benchmarks/results/wsl-x86_64-audit-run5.json",
+    "benchmarks/results/wsl-x86_64-audit-run6.json"
+  ]
+}

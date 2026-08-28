@@ -1,0 +1,37 @@
+{
+  "engines": {
+    "clibmdbx": {
+      "batch_get_ops_per_second_median": 3212355.55209592,
+      "cursor_scan_ops_per_second_median": 4097710.7319453843,
+      "point_get_latency_us_median_run": {
+        "p50": 0.622,
+        "p95": 0.698,
+        "p99": 1.178
+      },
+      "point_get_ops_per_second": {
+        "max": 1196519.7662337318,
+        "median": 1127294.150124801,
+        "min": 1008729.9423255629
+      }
+    },
+    "libmdbx_ctypes_0_3_2": {
+      "batch_get_ops_per_second_median": 111269.31644624495,
+      "cursor_scan_ops_per_second_median": 97191.8504439019,
+      "point_get_latency_us_median_run": {
+        "p50": 8.416,
+        "p95": 20.96,
+        "p99": 50.305
+      },
+      "point_get_ops_per_second": {
+        "max": 119173.89238414515,
+        "median": 81555.2090070293,
+        "min": 79260.90529783927
+      }
+    }
+  },
+  "runs": [
+    "benchmarks/results/review-20260829-run1.json",
+    "benchmarks/results/review-20260829-run2.json",
+    "benchmarks/results/review-20260829-run3.json"
+  ]
+}

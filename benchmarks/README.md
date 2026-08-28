@@ -1,0 +1,63 @@
+# Benchmarks
+
+Run on a native local filesystem (not an SMB/NFS mount and not WSL `/mnt/c`):
+
+```bash
+python benchmarks/benchmark.py --cpu 0 --output benchmarks/results/run.json
+```
+
+On Linux, `--cpu` pins only the single-thread point, batch, and cursor
+workloads to one allowed CPU to reduce scheduler migration noise. The benchmark
+restores the original affinity before concurrent-read and mixed-read/write
+tests. Omit it when affinity control is unavailable, and record that fact.
+
+The default point test performs 100,000 warmup reads followed by 500,000 timed
+reads from one read transaction. The ctypes adapter uses `libmdbx==0.3.2`, one
+read transaction, one DBI, and `DBI.get(txn, key)`, so transaction lifetime and
+key/value data match clibmdbx. Batch results intentionally compare one native
+boundary crossing against a Python/ctypes loop.
+
+Run at least three times after the first page-cache-warming run. Report all raw
+JSON files, CPU time, percentiles, and filesystem. MDBX maps the data file, so
+RSS includes mapped virtual pages and must not be interpreted as private heap.
+`check_performance.py` makes the hosted three-run job fail unless median point
+reads remain at least 2×, batch reads 5×, and cursor scans 5× the pinned ctypes
+reference. These are conservative regression floors, not expected performance.
+
+## Recorded final-review release-candidate result
+
+Three final-review 0.1.0a1 runs on 2026-08-29 used CPython 3.10.12, GCC 11.4,
+Linux x86_64 under WSL2, and a database on WSL's native `/tmp` filesystem. The
+single-thread workloads were pinned to CPU 0, the page cache was warmed before
+timing, and the sample digests match across bindings.
+
+| Workload | clibmdbx median | ctypes 0.3.2 median |
+| --- | ---: | ---: |
+| Warm point get | 1,127,294 ops/s | 81,555 ops/s |
+| Point get P50 | 0.622 us | 8.416 us |
+| Point get P95 | 0.698 us | 20.960 us |
+| Point get P99 | 1.178 us | 50.305 us |
+| 100-key batch get | 3,212,356 keys/s | 111,269 keys/s |
+| Cursor scan | 4,097,711 rows/s | 97,192 rows/s |
+
+The median advantages were 13.82x for point get, 28.87x for batch get and
+42.16x for cursor scan. clibmdbx warm point-get range was 1,008,730 to
+1,196,520 ops/s across the three measured runs. The exact inputs and aggregate
+are `review-20260829-run1.json` through `review-20260829-run3.json` and
+`review-20260829-summary.json`. Earlier pinned runs are retained for regression
+history. Six additional unpinned runs are retained as
+`wsl-x86_64-audit-run1.json` through `wsl-x86_64-audit-run6.json`; their 836,066
+ops/s median and wide spread demonstrate the WSL host's scheduler noise rather
+than being discarded. Raw files also contain four-thread read throughput,
+mixed read/write throughput, CPU time, maximum RSS and build diagnostics. The
+test is synthetic and page-cache-hot; it does not predict cold-device latency.
+Mapped pages make RSS a high-water view of the process address space/working
+set, not an allocation or leak measurement.
+
+After adding the full wtdcode compatibility suite, a fresh same-code regression
+run (`wsl-x86_64-wtd-parity-run.json`) produced 394,452 versus 60,688 warm point
+gets/s (6.50×), 1,661,099 versus 77,127 batch keys/s (21.54×), and 2,143,105
+versus 64,472 cursor rows/s (33.24×). Both sample digests matched. This single
+run was slower than the recorded three-run median on both bindings because of
+WSL host noise; it is retained rather than substituted for the three-run
+summary.

@@ -1,0 +1,78 @@
+name: clibmdbx tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ctypes-reference:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -U pip
+      - run: python -m pip install "setuptools==84.0.0" "wheel==0.48.0" "pytest==9.1.1" "libmdbx==0.3.2"
+      - run: python scripts/verify_vendor.py
+      - run: CLIBMDBX_STRICT=1 python -m pip install -e . --no-build-isolation
+      - run: TMPDIR=/tmp python -m pytest -q tests/test_wtdcode_parity.py tests/test_wtdcode_interop.py
+
+  python:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -U pip
+      - run: python -m pip install "setuptools==84.0.0" "wheel==0.48.0" "pytest==9.1.1"
+      - run: python scripts/verify_vendor.py
+      - run: python scripts/check_api_coverage.py
+      - run: CLIBMDBX_STRICT=1 python -m pip install -e . --no-build-isolation
+      - run: TMPDIR=/tmp python -m pytest -q
+      - if: matrix.python == '3.14'
+        run: python -m pip install "mypy==2.3.1" && python -m mypy.stubtest clibmdbx --ignore-missing-stub --allowlist tests/stubtest_allowlist.txt
+      - run: bash scripts/build_mdbx_chk.sh /tmp/clibmdbx-tools/mdbx_chk
+      - name: Check a test-created environment
+        run: |
+          DB_PATH=$(python - <<'PY'
+          import tempfile, clibmdbx
+          path = tempfile.mkdtemp(dir="/tmp")
+          with clibmdbx.Environment(path) as env:
+              with env.write() as txn:
+                  txn.put_many((str(i).encode(), b"value") for i in range(1000))
+          print(path)
+          PY
+          )
+          /tmp/clibmdbx-tools/mdbx_chk -q "$DB_PATH"
+
+  source-dist:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install "build==1.5.0" "twine==7.0.0"
+      - run: python -m build --sdist
+      - run: python -m twine check --strict dist/*
+      - run: python scripts/inspect_artifacts.py dist/*
