@@ -56,8 +56,9 @@ platform is supported only after its CI job has passed; a classifier or workflow
 entry alone is not validation.
 
 Free-threaded (`cp*t`) CPython builds are intentionally rejected at compile
-time in this alpha: the wrapper's native-object lifecycle relies on the GIL and
-has not yet been redesigned and validated for free-threaded execution.
+time in the current release: the wrapper's native-object lifecycle relies on
+the GIL and has not yet been redesigned and validated for free-threaded
+execution.
 
 Linux wheels target manylinux x86_64 and aarch64. macOS targets x86_64 and arm64;
 Windows targets AMD64 with Windows 10 or later. The C extension contains static

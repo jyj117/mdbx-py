@@ -94,7 +94,7 @@ Run the final local checks from the standalone repository root; these commands
 do not upload:
 
 ```bash
-python scripts/check_version.py 0.1.0a1
+python scripts/check_version.py 1.0.1
 python scripts/check_release_configuration.py
 python scripts/verify_vendor.py
 python scripts/check_api_coverage.py
@@ -108,8 +108,8 @@ After every prerequisite above is satisfied, create and push a signed annotated
 tag to the configured GitHub repository:
 
 ```bash
-git tag -s clibmdbx-v0.1.0a1 -m "clibmdbx 0.1.0a1"
-git push <github-remote> clibmdbx-v0.1.0a1
+git tag -s clibmdbx-v1.0.1 -m "clibmdbx 1.0.1"
+git push <github-remote> clibmdbx-v1.0.1
 ```
 
 The workflow then performs this fixed sequence:
@@ -127,10 +127,10 @@ The workflow then performs this fixed sequence:
 6. Compare the complete PyPI release to the reviewed hashes and repeat the clean
    install tests from the production index.
 
-For an alpha, installation must pin the prerelease explicitly:
+Install the exact reviewed stable release:
 
 ```bash
-python -m pip install --only-binary=:all: "clibmdbx==0.1.0a1"
+python -m pip install --only-binary=:all: "clibmdbx==1.0.1"
 ```
 
 ## Failure and rerun rules

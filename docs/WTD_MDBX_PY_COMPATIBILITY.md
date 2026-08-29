@@ -138,6 +138,6 @@ hash on every test build.
   cross-thread close order.
 
 Compatibility means the same durable database behavior and on-disk format, not
-preserving unsafe ctypes pointer access. The package is still an alpha until
-the hosted wheel matrix and production soak tests complete; no finite test
-suite can prove that defects are impossible.
+preserving unsafe ctypes pointer access. The hosted wheel matrix is complete and
+1.0.1 is a stable release; no finite test suite can prove that defects are
+impossible, so production rollout should still be canaried and monitored.

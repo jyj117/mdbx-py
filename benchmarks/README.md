@@ -26,7 +26,8 @@ reference. These are conservative regression floors, not expected performance.
 
 ## Recorded final-review release-candidate result
 
-Three final-review 0.1.0a1 runs on 2026-08-29 used CPython 3.10.12, GCC 11.4,
+Three final-review pre-release-candidate runs (recorded with binding version
+0.1.0a1) on 2026-08-29 used CPython 3.10.12, GCC 11.4,
 Linux x86_64 under WSL2, and a database on WSL's native `/tmp` filesystem. The
 single-thread workloads were pinned to CPU 0, the page cache was warmed before
 timing, and the sample digests match across bindings.

@@ -15,7 +15,7 @@ intentional boundary, not an accidental omission.
 | `mdbx_is_readahead_reasonable`, all `mdbx_limits_*`, `mdbx_default_pagesize`, `mdbx_get_sysraminfo`, `mdbx_env_get_max*` | Wrapped/represented | `readahead_reasonable`, `limits` (including system RAM/page data); legacy or redundant env-specific variants are collapsed |
 | `mdbx_txn_begin_ex`, `info`, `env`, `flags`, `id`, `commit_ex`, `abort_ex`, `break`, `reset`, `park`, `unpark`, `renew`, `refresh` | Wrapped | `Environment.begin`; `Transaction` lifecycle/properties |
 | `mdbx_txn_clone` | Excluded | Native clean-snapshot cloning needs explicit parent/DBI/cursor lifetime semantics; open another read transaction today |
-| `mdbx_txn_checkpoint`, `commit_embark_read`, `amend`, `rollback` | Excluded | Upstream marks these lifecycle APIs as subject to incompatible change; alpha wrapper keeps commit/abort semantics unambiguous |
+| `mdbx_txn_checkpoint`, `commit_embark_read`, `amend`, `rollback` | Excluded | Upstream marks these lifecycle APIs as subject to incompatible change; the binding keeps commit/abort semantics unambiguous |
 | `mdbx_canary_put/get`, `mdbx_gc_info` | Wrapped | `Transaction.canary`, `gc_info` |
 | `mdbx_dbi_open`, `open2`, `open_ex`, `open_ex2` | Wrapped/represented | `Transaction.open_db`; native comparators/callback contexts intentionally not accepted |
 | `mdbx_dbi_rename`, `rename2`, `enumerate_tables`, `stat`, `flags_ex`, `close`, `drop`, `sequence` | Wrapped/represented | `Database` methods and `Transaction.databases`. Individual wrappers deliberately do not call unsafe `mdbx_dbi_close`; normal DBIs live until environment close, while `drop(delete=True)` performs the native delete-and-close after an exclusivity check and invalidates all aliases |

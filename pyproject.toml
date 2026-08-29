@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clibmdbx"
-version = "0.1.0a1"
+version = "1.0.1"
 description = "High-performance CPython C-API bindings for an embedded libmdbx"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ license-files = ["LICENSE", "NOTICE", "vendor/libmdbx/LICENSE", "vendor/libmdbx/
 authors = [{name = "clibmdbx contributors"}]
 keywords = ["mdbx", "libmdbx", "database", "key-value", "cpython", "extension"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Operating System :: Microsoft :: Windows :: Windows 10",
   "Operating System :: MacOS :: MacOS X",
