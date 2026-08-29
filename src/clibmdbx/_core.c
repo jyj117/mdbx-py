@@ -2107,13 +2107,19 @@ static PyObject *Txn_put(TxnObject *self, PyObject *const *args, Py_ssize_t narg
     return NULL;
   unsigned long flags = 0;
   if (flags_obj != NULL) {
-    flags = PyLong_AsUnsignedLong(flags_obj);
-    if (PyErr_Occurred())
+    unsigned long long parsed_flags = PyLong_AsUnsignedLongLong(flags_obj);
+    if (PyErr_Occurred()) {
+      if (PyErr_ExceptionMatches(PyExc_OverflowError)) {
+        PyErr_Clear();
+        PyErr_SetString(PyExc_OverflowError, "put flags must fit uint32");
+      }
       return NULL;
-    if (flags > UINT32_MAX) {
+    }
+    if (parsed_flags > UINT32_MAX) {
       PyErr_SetString(PyExc_OverflowError, "put flags must fit uint32");
       return NULL;
     }
+    flags = (unsigned long)parsed_flags;
   }
   if (!validate_scalar_put_flags(flags, "put"))
     return NULL;

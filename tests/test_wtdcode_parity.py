@@ -284,7 +284,9 @@ def test_wtd_parent_txn(tmp_path) -> None:
 
 def test_wtd_null_bytes(tmp_path) -> None:
     name, key, value = b"0m\x00\x00", b"1k\x00\x00", b"2v\x00\x00"
-    with open_env(tmp_path, "nul", max_dbs=2) as env:
+    # `nul` is a reserved Win32 device name, so keep the embedded-NUL test
+    # entirely in MDBX keys/values while using a portable directory name.
+    with open_env(tmp_path, "embedded-null-data", max_dbs=2) as env:
         with env.write() as txn:
             db = txn.open_db(name, create=True)
             txn.put(key, value, db)
