@@ -7,7 +7,6 @@ import tempfile
 
 import clibmdbx
 
-
 with tempfile.TemporaryDirectory(dir="/tmp") as directory:
     env = clibmdbx.Environment(directory, max_dbs=4)
     with env.write() as txn:

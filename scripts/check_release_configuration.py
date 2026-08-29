@@ -23,7 +23,9 @@ def validate(root: pathlib.Path) -> list[str]:
     errors: list[str] = []
     for name in sorted(REQUIRED_URLS):
         value = urls.get(name, "")
-        if not value.startswith("https://") or any(marker in value.lower() for marker in ("example.", "todo", "replace-me")):
+        if not value.startswith("https://") or any(
+            marker in value.lower() for marker in ("example.", "todo", "replace-me")
+        ):
             errors.append(f"pyproject.toml [project.urls] needs a real HTTPS {name} URL")
 
     security = (root / "SECURITY.md").read_text(encoding="utf-8").lower()

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import struct
 
-import clibmdbx
 import pytest
 
+import clibmdbx
 
 KEY = b"MDBX_TEST_KEY"
 BINARY_VALUE = b"\xaa\xbb\xcc\x00"
@@ -62,8 +62,7 @@ def test_wtd_db_iter(tmp_path) -> None:
                 name = f"table-{db_index:02d}".encode()
                 db = txn.open_db(name, create=True)
                 records = [
-                    (f"key-{item:04d}".encode(), f"value-{db_index:02d}-{item:04d}".encode())
-                    for item in range(1024)
+                    (f"key-{item:04d}".encode(), f"value-{db_index:02d}-{item:04d}".encode()) for item in range(1024)
                 ]
                 assert txn.put_many(records, db=db) == len(records)
                 expected[name] = records
@@ -93,8 +92,7 @@ def test_wtd_multi_write(tmp_path) -> None:
         for db_index in range(16):
             name = f"batch-{db_index:02d}".encode()
             records = [
-                (f"key-{item:04d}".encode(), f"value-{db_index:02d}-{item:04d}".encode())
-                for item in range(1024)
+                (f"key-{item:04d}".encode(), f"value-{db_index:02d}-{item:04d}".encode()) for item in range(1024)
             ]
             with env.write() as txn:
                 db = txn.open_db(name, create=True)
@@ -299,11 +297,7 @@ def test_wtd_null_bytes(tmp_path) -> None:
 
 
 def test_wtd_iters(tmp_path) -> None:
-    expected = [
-        (struct.pack(">I", i), struct.pack(">I", 10 - i))
-        for i in range(10)
-        if i != 1
-    ]
+    expected = [(struct.pack(">I", i), struct.pack(">I", 10 - i)) for i in range(10) if i != 1]
     with open_env(tmp_path, "iters") as env:
         with env.write() as txn:
             txn.put_many(expected)

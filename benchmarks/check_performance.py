@@ -20,12 +20,9 @@ def main() -> None:
     native = engines["clibmdbx"]
     reference = engines["libmdbx_ctypes_0_3_2"]
     ratios = {
-        "point": native["point_get_ops_per_second"]["median"]
-        / reference["point_get_ops_per_second"]["median"],
-        "batch": native["batch_get_ops_per_second_median"]
-        / reference["batch_get_ops_per_second_median"],
-        "cursor": native["cursor_scan_ops_per_second_median"]
-        / reference["cursor_scan_ops_per_second_median"],
+        "point": native["point_get_ops_per_second"]["median"] / reference["point_get_ops_per_second"]["median"],
+        "batch": native["batch_get_ops_per_second_median"] / reference["batch_get_ops_per_second_median"],
+        "cursor": native["cursor_scan_ops_per_second_median"] / reference["cursor_scan_ops_per_second_median"],
     }
     minimums = {
         "point": args.minimum_point_ratio,

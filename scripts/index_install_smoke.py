@@ -11,7 +11,7 @@ import tempfile
 import time
 import venv
 
-SMOKE = r'''
+SMOKE = r"""
 import json
 import os
 import tempfile
@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory() as directory:
     env.close()
 
 print(json.dumps(clibmdbx.diagnostics(), default=str, sort_keys=True))
-'''
+"""
 
 
 def main() -> int:
@@ -79,9 +79,15 @@ def main() -> int:
         venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
         python = venv_dir / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
         command = [
-            str(python), "-m", "pip", "install",
-            "--disable-pip-version-check", "--no-input", "--no-cache-dir",
-            "--only-binary=:all:", "--no-deps",
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-input",
+            "--no-cache-dir",
+            "--only-binary=:all:",
+            "--no-deps",
         ]
         if args.index:
             command.extend(["--index-url", args.index])
@@ -110,7 +116,9 @@ def main() -> int:
         )
         if uninstall.returncode:
             return uninstall.returncode
-    print(f"clean-index install, import, CRUD, concurrency, fork safety and uninstall passed for {args.project} {args.version}")
+    print(
+        f"clean-index install, import, CRUD, concurrency, fork safety and uninstall passed for {args.project} {args.version}"
+    )
     return 0
 
 

@@ -63,7 +63,7 @@ def test_environment_shared_readers(env: clibmdbx.Environment) -> None:
 
 
 def test_set_option_does_not_deadlock_behind_writer_gil(tmp_path) -> None:
-    code = r'''
+    code = r"""
 import sys, threading, time
 import clibmdbx
 
@@ -90,7 +90,7 @@ thread.join(3)
 assert not thread.is_alive(), "set_option remained deadlocked"
 assert not errors, errors
 env.close()
-'''
+"""
     result = subprocess.run(
         [sys.executable, "-c", code, str(tmp_path / "set-option-lock")],
         text=True,
@@ -102,7 +102,7 @@ env.close()
 
 
 def test_stat_does_not_deadlock_behind_writer_gil(tmp_path) -> None:
-    code = r'''
+    code = r"""
 import sys, threading, time
 import clibmdbx
 
@@ -127,7 +127,7 @@ thread.join(3)
 assert not thread.is_alive(), "stat remained deadlocked"
 assert not errors, errors
 env.close()
-'''
+"""
     result = subprocess.run(
         [sys.executable, "-c", code, str(tmp_path / "stat-lock")],
         text=True,

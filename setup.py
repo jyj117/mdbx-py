@@ -14,6 +14,7 @@ from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.sdist import sdist
 
+
 class BuildExt(build_ext):
     """Use conservative release optimizations without changing MDBX durability."""
 
@@ -121,11 +122,13 @@ define_macros = [
 ]
 
 if sys.platform == "win32":
-    define_macros.extend([
-        ("_WIN32_WINNT", "0x0A00"),
-        ("WIN32_LEAN_AND_MEAN", "1"),
-        ("NOMINMAX", "1"),
-    ])
+    define_macros.extend(
+        [
+            ("_WIN32_WINNT", "0x0A00"),
+            ("WIN32_LEAN_AND_MEAN", "1"),
+            ("NOMINMAX", "1"),
+        ]
+    )
 
 system_libraries = ["advapi32", "ntdll", "user32"] if sys.platform == "win32" else []
 

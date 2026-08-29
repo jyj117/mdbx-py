@@ -21,7 +21,14 @@ if sys.argv[3] == 'commit':
 os._exit(0)
 """
     result = subprocess.run(
-        [sys.executable, "-c", code, str(path), "committed" if commit else "uncommitted", "commit" if commit else "exit"],
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(path),
+            "committed" if commit else "uncommitted",
+            "commit" if commit else "exit",
+        ],
         check=False,
     )
     assert result.returncode == 0

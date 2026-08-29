@@ -109,3 +109,56 @@ def test_fastcall_put_flags_do_not_truncate_on_64_bit_hosts(env: clibmdbx.Enviro
     with env.write() as txn:
         with pytest.raises(OverflowError, match="uint32"):
             txn.put(b"key", b"value", flags=1 << 40)
+
+
+@pytest.mark.parametrize("value", [-1, 1 << 40])
+def test_all_uint32_arguments_reject_out_of_range_values(
+    env: clibmdbx.Environment, tmp_path: pathlib.Path, value: int
+) -> None:
+    constructor_calls = (
+        lambda: clibmdbx.Environment(tmp_path / "bad-flags", flags=value),
+        lambda: clibmdbx.Environment(tmp_path / "bad-mode", mode=value),
+        lambda: clibmdbx.Environment(tmp_path / "bad-readers", max_readers=value),
+        lambda: clibmdbx.Environment(tmp_path / "bad-dbs", max_dbs=value),
+    )
+    for call in constructor_calls:
+        with pytest.raises(OverflowError, match="uint32"):
+            call()
+
+    environment_calls = (
+        lambda: env.copy(tmp_path / "bad-copy", flags=value),
+        lambda: env.set_flags(value),
+        lambda: env.warmup(flags=value),
+        lambda: env.warmup(timeout=value),
+        lambda: env.begin(flags=value),
+        lambda: env.open_db(flags=value),
+    )
+    for call in environment_calls:
+        with pytest.raises(OverflowError, match="uint32"):
+            call()
+
+    with env.write() as txn:
+        db = txn.open_db(b"range-checks", create=True)
+        cursor = txn.cursor(db)
+        transaction_calls = (
+            lambda: txn.open_db(flags=value),
+            lambda: txn.put(b"key", b"value", flags=value),
+            lambda: txn.replace(b"key", b"value", flags=value),
+            lambda: txn.put_many([(b"key", b"value")], flags=value),
+            lambda: cursor.put(b"key", b"value", flags=value),
+            lambda: cursor.delete(flags=value),
+        )
+        for call in transaction_calls:
+            with pytest.raises(OverflowError, match="uint32"):
+                call()
+        cursor.close()
+
+
+@pytest.mark.parametrize("value", [-1, 1 << 80])
+def test_all_uint64_arguments_reject_out_of_range_values(env: clibmdbx.Environment, value: int) -> None:
+    with pytest.raises(OverflowError, match="uint64"):
+        env.set_option(clibmdbx.MDBX_opt_sync_bytes, value)
+    with env.write() as txn:
+        db = txn.open_db(b"sequence-range", create=True)
+        with pytest.raises(OverflowError, match="uint64"):
+            db.sequence(txn, increment=value)

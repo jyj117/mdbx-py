@@ -77,9 +77,7 @@ def main() -> int:
                 interpreter = interpreters.pop()
                 abis = {tag.abi for tag in tags}
                 if abis != {interpreter}:
-                    raise ValueError(
-                        f"wheel must use the exact per-CPython ABI {interpreter}, found {sorted(abis)}"
-                    )
+                    raise ValueError(f"wheel must use the exact per-CPython ABI {interpreter}, found {sorted(abis)}")
                 target = (interpreter, platform_group({tag.platform for tag in tags}))
                 if target in wheel_targets:
                     raise ValueError(f"duplicates target {target} from {wheel_targets[target]}")
