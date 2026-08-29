@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.dylib
+.pytest_cache/
+.coverage
+build/
+dist/
+*.egg-info/
+.venv/
+.venv-*/
+.pypirc
+.env
+.env.*
+SHA256SUMS

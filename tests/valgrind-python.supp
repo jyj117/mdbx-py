@@ -1,0 +1,8 @@
+{
+   CPython_known_reachable
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:Py_Initialize*
+   ...
+}

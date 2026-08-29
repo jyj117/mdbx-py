@@ -1,0 +1,58 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:db352a45-d9e9-47f3-aac5-e894110d2478",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-08-29T00:00:00Z",
+    "component": {
+      "type": "library",
+      "name": "clibmdbx",
+      "version": "0.1.0a1",
+      "purl": "pkg:pypi/clibmdbx@0.1.0a1",
+      "licenses": [{"license": {"id": "Apache-2.0"}}],
+      "externalReferences": [
+        {"type": "vcs", "url": "https://github.com/jyj117/mdbx-py"},
+        {"type": "issue-tracker", "url": "https://github.com/jyj117/mdbx-py/issues"}
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "libmdbx",
+      "version": "0.14.3",
+      "purl": "pkg:github/Mithril-mine/libmdbx@v0.14.3",
+      "licenses": [{"license": {"id": "Apache-2.0"}}],
+      "hashes": [
+        {"alg": "SHA-256", "content": "dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd"}
+      ],
+      "externalReferences": [
+        {"type": "vcs", "url": "https://github.com/Mithril-mine/libmdbx/tree/v0.14.3"},
+        {"type": "distribution", "url": "https://libmdbx.dqdkfa.ru/release/libmdbx-amalgamated-0.14.3.tar.xz"}
+      ]
+    },
+    {
+      "type": "library",
+      "name": "typing_extensions",
+      "purl": "pkg:pypi/typing_extensions",
+      "scope": "required",
+      "licenses": [{"license": {"id": "PSF-2.0"}}],
+      "properties": [
+        {
+          "name": "clibmdbx:requirement",
+          "value": ">=4.15; python_version < '3.15'"
+        }
+      ],
+      "externalReferences": [
+        {"type": "website", "url": "https://typing-extensions.readthedocs.io/"},
+        {"type": "vcs", "url": "https://github.com/python/typing_extensions"}
+      ]
+    }
+  ],
+  "dependencies": [
+    {"ref": "pkg:pypi/clibmdbx@0.1.0a1", "dependsOn": ["pkg:github/Mithril-mine/libmdbx@v0.14.3", "pkg:pypi/typing_extensions"]},
+    {"ref": "pkg:github/Mithril-mine/libmdbx@v0.14.3", "dependsOn": []},
+    {"ref": "pkg:pypi/typing_extensions", "dependsOn": []}
+  ]
+}

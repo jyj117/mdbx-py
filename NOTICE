@@ -1,0 +1,9 @@
+clibmdbx
+Copyright 2026 clibmdbx contributors
+
+This product includes libmdbx v0.14.3, Copyright 2015-2026 Leonid Yuriev
+and contributors, and work derived from LMDB. See vendor/libmdbx/NOTICE and
+vendor/libmdbx/COPYRIGHT for complete attribution.
+
+clibmdbx is an independent community binding and is not an official libmdbx
+project.

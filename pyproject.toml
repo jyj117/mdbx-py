@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools==84.0.0", "wheel==0.48.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clibmdbx"
+version = "0.1.0a1"
+description = "High-performance CPython C-API bindings for an embedded libmdbx"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["typing_extensions>=4.15; python_version < '3.15'"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "vendor/libmdbx/LICENSE", "vendor/libmdbx/NOTICE", "vendor/libmdbx/COPYRIGHT"]
+authors = [{name = "clibmdbx contributors"}]
+keywords = ["mdbx", "libmdbx", "database", "key-value", "cpython", "extension"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: Microsoft :: Windows :: Windows 10",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: C",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Database :: Database Engines/Servers",
+]
+
+[project.urls]
+Repository = "https://github.com/jyj117/mdbx-py"
+Issues = "https://github.com/jyj117/mdbx-py/issues"
+Changelog = "https://github.com/jyj117/mdbx-py/blob/main/CHANGELOG.md"
+Upstream = "https://github.com/Mithril-mine/libmdbx"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = false
+
+[tool.setuptools.package-data]
+clibmdbx = ["py.typed", "*.pyi"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "slow: long-running stress or large-value test",
+  "fork: requires os.fork",
+  "ctypes_reference: requires the pinned wtdcode/libmdbx 0.3.2 reference binding",
+]
+
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux_* *-win32 *-manylinux_i686"
+test-requires = ["pytest==9.1.1"]
+test-command = "python -m pytest {package}/tests -q"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]

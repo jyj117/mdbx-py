@@ -1,0 +1,37 @@
+{
+  "engines": {
+    "clibmdbx": {
+      "batch_get_ops_per_second_median": 2471669.184045253,
+      "cursor_scan_ops_per_second_median": 2920237.5087570623,
+      "point_get_latency_us_median_run": {
+        "p50": 0.735,
+        "p95": 0.963,
+        "p99": 1.724
+      },
+      "point_get_ops_per_second": {
+        "max": 1046228.5522806759,
+        "median": 942919.8259580461,
+        "min": 698149.6555696127
+      }
+    },
+    "libmdbx_ctypes_0_3_2": {
+      "batch_get_ops_per_second_median": 114527.05881904211,
+      "cursor_scan_ops_per_second_median": 98713.47712399074,
+      "point_get_latency_us_median_run": {
+        "p50": 9.446,
+        "p95": 15.818,
+        "p99": 43.014
+      },
+      "point_get_ops_per_second": {
+        "max": 96900.52578965614,
+        "median": 86723.25914238935,
+        "min": 64904.044839169146
+      }
+    }
+  },
+  "runs": [
+    "benchmarks/results/wsl-x86_64-affinity-run1.json",
+    "benchmarks/results/wsl-x86_64-affinity-run2.json",
+    "benchmarks/results/wsl-x86_64-affinity-run3.json"
+  ]
+}
