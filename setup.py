@@ -54,6 +54,12 @@ class BuildExt(build_ext):
                         "-Wno-cast-function-type",
                         "-Wno-missing-field-initializers",
                     ]
+                    if sys.platform == "darwin":
+                        # Apple's CPython build injects -Wunreachable-code.
+                        # The official libmdbx amalgamation intentionally uses
+                        # compile-time-disabled diagnostic branches, so keep
+                        # all other warnings fatal and suppress this one class.
+                        ext.extra_compile_args += ["-Wno-unreachable-code"]
                 if sanitize:
                     kinds = sanitize.replace(" ", "")
                     ext.extra_compile_args += [f"-fsanitize={kinds}", "-fno-omit-frame-pointer", "-O1"]
@@ -121,6 +127,8 @@ if sys.platform == "win32":
         ("NOMINMAX", "1"),
     ])
 
+system_libraries = ["advapi32", "ntdll", "user32"] if sys.platform == "win32" else []
+
 extension = Extension(
     "clibmdbx._core",
     sources=[
@@ -129,6 +137,7 @@ extension = Extension(
     ],
     include_dirs=["vendor/libmdbx"],
     define_macros=define_macros,
+    libraries=system_libraries,
     extra_compile_args=[],
     extra_link_args=[],
 )
