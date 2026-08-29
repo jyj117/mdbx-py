@@ -9,6 +9,14 @@ import sys
 import threading
 import zipfile
 
+REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    # cibuildwheel executes installed-wheel tests from an isolated temporary
+    # directory.  These tests deliberately exercise repository release tools,
+    # so make their source root explicit instead of relying on the current
+    # working directory.
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
 from scripts.check_release_configuration import validate
 
 

@@ -26,13 +26,21 @@ class BuildExt(build_ext):
                 ext.extra_compile_args += ["/O2", "/GL", "/utf-8"]
                 ext.extra_link_args += ["/LTCG", "/OPT:REF", "/OPT:ICF"]
                 if strict:
-                    ext.extra_compile_args += ["/W4", "/WX"]
+                    # CPython 3.10's own pytime.h emits C4115 with current
+                    # MSVC, and CPython callback signatures intentionally
+                    # carry unused parameters.  Keep every other W4 warning
+                    # fatal while suppressing only those two known classes.
+                    ext.extra_compile_args += ["/W4", "/WX", "/wd4100", "/wd4115"]
             else:
                 ext.extra_compile_args += [
                     "-O3",
                     "-fvisibility=hidden",
-                    "-fno-semantic-interposition",
                 ]
+                if sys.platform.startswith("linux"):
+                    # This is a GCC/ELF optimization.  Apple Clang accepts the
+                    # spelling but reports it as unused, which is correctly
+                    # fatal in strict builds.
+                    ext.extra_compile_args += ["-fno-semantic-interposition"]
                 if not sanitize:
                     lto = "-flto=auto" if sys.platform.startswith("linux") else "-flto"
                     ext.extra_compile_args += [lto]
