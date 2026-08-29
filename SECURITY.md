@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-Until 1.0, only the newest published alpha receives security fixes. Production
-users should pin an exact version and test database backups and recovery.
+Only the newest published 1.x release receives security fixes. Production users
+should pin an exact version and test database backups and recovery before
+rollout.
 
 ## Reporting
 

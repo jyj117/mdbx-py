@@ -6,7 +6,7 @@ specific exceptions, type information, self-contained wheels, and explicit
 thread/process rules. `clibmdbx` is not a drop-in API clone: libmdbx has
 different transaction, DBI, geometry, maintenance, and durability facilities.
 
-The comparison baseline reviewed for this alpha is `python-lmdb` 2.3.0.
+The comparison baseline reviewed for this release is `python-lmdb` 2.3.0.
 
 | Concern | python-lmdb pattern | clibmdbx pattern |
 | --- | --- | --- |
@@ -38,9 +38,10 @@ Important migration differences:
   begin and finish each transaction inside the same worker invocation. Share
   the environment, not transactions or cursors.
 - After `fork()`, discard every inherited object and open a fresh environment.
-- CPython subinterpreters are intentionally rejected in this alpha. Use a
-  separate process; this avoids unsafe process-global Python type/exception
-  state until a future multi-phase module conversion is fully benchmarked.
+- CPython subinterpreters are intentionally rejected in the current release.
+  Use a separate process; this avoids unsafe process-global Python
+  type/exception state until a future multi-phase module conversion is fully
+  benchmarked.
 
 Before production rollout, run the wheel smoke test and application workload on
 the exact CPython/platform pair, exercise shutdown while requests drain, use

@@ -10,8 +10,9 @@ directly. The extension embeds the official libmdbx 0.14.3 amalgamation, so a
 wheel does not load a system `libmdbx` and has no runtime Python dependencies.
 It does not use ctypes, CFFI, Cython, Rust, or a helper service.
 
-> **Alpha release:** 0.1.0a1 deliberately uses a CPython-version-specific ABI.
-> Do not assume that the Python API is stable until 1.0.
+> **Stable release:** 1.0.1 deliberately uses a CPython-version-specific ABI
+> for maximum hot-path performance. Public API compatibility follows Semantic
+> Versioning within the 1.x line.
 
 ## Quick start
 

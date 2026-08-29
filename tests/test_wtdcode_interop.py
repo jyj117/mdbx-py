@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import clibmdbx
 import pytest
 
+import clibmdbx
 
 mdbx = pytest.importorskip(
     "mdbx",

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import gc
 
-import clibmdbx
 import pytest
+
+import clibmdbx
 
 
 def test_named_database_lifecycle(env: clibmdbx.Environment) -> None:

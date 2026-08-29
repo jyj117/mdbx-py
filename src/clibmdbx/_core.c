@@ -21,7 +21,7 @@
 
 #include "mdbx.h"
 
-#define CLIBMDBX_VERSION "0.1.0a1"
+#define CLIBMDBX_VERSION "1.0.1"
 #define CLIBMDBX_RELEASE_TAG "v0.14.3"
 #define CLIBMDBX_RELEASE_COMMIT "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0"
 #define CLIBMDBX_AMALGAMATION_COMMIT "251562b2dc55266d8e6d0e6627ec88ecb410702f"
@@ -614,6 +614,36 @@ static int parse_geometry(PyObject *obj, intptr_t values[6]) {
   return 1;
 }
 
+static int parse_uint32(PyObject *obj, uint32_t *value, const char *name) {
+  unsigned long long parsed = PyLong_AsUnsignedLongLong(obj);
+  if (PyErr_Occurred()) {
+    if (PyErr_ExceptionMatches(PyExc_OverflowError)) {
+      PyErr_Clear();
+      PyErr_Format(PyExc_OverflowError, "%s must fit uint32", name);
+    }
+    return 0;
+  }
+  if (parsed > UINT32_MAX) {
+    PyErr_Format(PyExc_OverflowError, "%s must fit uint32", name);
+    return 0;
+  }
+  *value = (uint32_t)parsed;
+  return 1;
+}
+
+static int parse_uint64(PyObject *obj, uint64_t *value, const char *name) {
+  unsigned long long parsed = PyLong_AsUnsignedLongLong(obj);
+  if (PyErr_Occurred()) {
+    if (PyErr_ExceptionMatches(PyExc_OverflowError)) {
+      PyErr_Clear();
+      PyErr_Format(PyExc_OverflowError, "%s must fit uint64", name);
+    }
+    return 0;
+  }
+  *value = (uint64_t)parsed;
+  return 1;
+}
+
 static int apply_options(MDBX_env *env, PyObject *options) {
   if (options == NULL || options == Py_None)
     return 1;
@@ -744,16 +774,22 @@ static int Env_init(EnvObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"path", "flags", "mode", "max_readers", "max_dbs", "geometry", "options", "readonly",
                            "subdir", NULL};
   PyObject *path;
-  unsigned int flags = 0;
-  unsigned int mode = 0664;
-  unsigned long max_readers = 126;
-  unsigned long max_dbs = 64;
+  PyObject *flags_obj = NULL, *mode_obj = NULL, *max_readers_obj = NULL, *max_dbs_obj = NULL;
+  uint32_t flags = 0;
+  uint32_t mode = 0664;
+  uint32_t max_readers = 126;
+  uint32_t max_dbs = 64;
   PyObject *geometry = Py_None;
   PyObject *options = Py_None;
   int readonly = 0;
   int subdir = 1;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|IIkkOOpp:Environment", kwlist, &path, &flags, &mode, &max_readers,
-                                   &max_dbs, &geometry, &options, &readonly, &subdir))
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OOOOOOpp:Environment", kwlist, &path, &flags_obj, &mode_obj,
+                                   &max_readers_obj, &max_dbs_obj, &geometry, &options, &readonly, &subdir))
+    return -1;
+  if ((flags_obj != NULL && !parse_uint32(flags_obj, &flags, "flags")) ||
+      (mode_obj != NULL && !parse_uint32(mode_obj, &mode, "mode")) ||
+      (max_readers_obj != NULL && !parse_uint32(max_readers_obj, &max_readers, "max_readers")) ||
+      (max_dbs_obj != NULL && !parse_uint32(max_dbs_obj, &max_dbs, "max_dbs")))
     return -1;
   /* path is retained for the lifetime of the wrapper, including after close,
      and therefore also acts as an immutable "initialized once" marker.  A
@@ -761,10 +797,6 @@ static int Env_init(EnvObject *self, PyObject *args, PyObject *kwargs) {
      stale environment-owned DBI bookkeeping. */
   if (self->path != NULL) {
     PyErr_SetString(PyExc_RuntimeError, "Environment.__init__ called more than once");
-    return -1;
-  }
-  if (max_readers > UINT32_MAX || max_dbs > UINT32_MAX) {
-    PyErr_SetString(PyExc_OverflowError, "max_readers and max_dbs must fit uint32");
     return -1;
   }
   MDBX_env *env = NULL;
@@ -1040,9 +1072,11 @@ static int native_copy_path(MDBX_env *env, PyObject *path, MDBX_copy_flags_t fla
 
 static PyObject *Env_copy(EnvObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"path", "flags", NULL};
-  PyObject *path;
-  unsigned int flags = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|I:copy", kwlist, &path, &flags))
+  PyObject *path, *flags_obj = NULL;
+  uint32_t flags = 0;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:copy", kwlist, &path, &flags_obj))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "copy flags"))
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
@@ -1086,9 +1120,12 @@ static PyObject *Env_get_flags(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
 
 static PyObject *Env_set_flags(EnvObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"flags", "enabled", NULL};
-  unsigned int flags;
+  PyObject *flags_obj;
+  uint32_t flags;
   int enabled = 1;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "I|p:set_flags", kwlist, &flags, &enabled))
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|p:set_flags", kwlist, &flags_obj, &enabled))
+    return NULL;
+  if (!parse_uint32(flags_obj, &flags, "flags"))
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
@@ -1124,8 +1161,11 @@ static PyObject *Env_get_option(EnvObject *self, PyObject *arg) {
 
 static PyObject *Env_set_option(EnvObject *self, PyObject *args) {
   long option;
-  unsigned long long value;
-  if (!PyArg_ParseTuple(args, "lK:set_option", &option, &value))
+  PyObject *value_obj;
+  uint64_t value;
+  if (!PyArg_ParseTuple(args, "lO:set_option", &option, &value_obj))
+    return NULL;
+  if (!parse_uint64(value_obj, &value, "option value"))
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
@@ -1213,8 +1253,12 @@ static PyObject *Env_defrag(EnvObject *self, PyObject *args, PyObject *kwargs) {
 
 static PyObject *Env_warmup(EnvObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"flags", "timeout", NULL};
-  unsigned int flags = 0, timeout = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|II:warmup", kwlist, &flags, &timeout))
+  PyObject *flags_obj = NULL, *timeout_obj = NULL;
+  uint32_t flags = 0, timeout = 0;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OO:warmup", kwlist, &flags_obj, &timeout_obj))
+    return NULL;
+  if ((flags_obj != NULL && !parse_uint32(flags_obj, &flags, "warmup flags")) ||
+      (timeout_obj != NULL && !parse_uint32(timeout_obj, &timeout, "warmup timeout")))
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
@@ -1298,8 +1342,11 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"write", "parent", "flags", NULL};
   int write = 0;
   PyObject *parent_obj = Py_None;
-  unsigned int flags = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|pOI:begin", kwlist, &write, &parent_obj, &flags))
+  PyObject *flags_obj = NULL;
+  uint32_t flags = 0;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|pOO:begin", kwlist, &write, &parent_obj, &flags_obj))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "transaction flags"))
     return NULL;
   if (write && (flags & MDBX_TXN_RDONLY)) {
     PyErr_SetString(PyExc_ValueError, "write=True conflicts with MDBX_TXN_RDONLY flags");
@@ -1853,9 +1900,12 @@ static PyObject *new_database(EnvObject *env, MDBX_dbi dbi, PyObject *name, TxnO
 static PyObject *Txn_open_db(TxnObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"name", "flags", "create", "accede", NULL};
   PyObject *name = Py_None;
-  unsigned int flags = 0;
+  PyObject *flags_obj = NULL;
+  uint32_t flags = 0;
   int create = 0, accede = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OIpp:open_db", kwlist, &name, &flags, &create, &accede))
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OOpp:open_db", kwlist, &name, &flags_obj, &create, &accede))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "database flags"))
     return NULL;
   if (!check_txn(self, create))
     return NULL;
@@ -1902,9 +1952,12 @@ static PyObject *Txn_open_db(TxnObject *self, PyObject *args, PyObject *kwargs) 
 static PyObject *Env_open_db(EnvObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"name", "flags", "create", NULL};
   PyObject *name = Py_None;
-  unsigned int flags = 0;
+  PyObject *flags_obj = NULL;
+  uint32_t flags = 0;
   int create = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OIp:open_db", kwlist, &name, &flags, &create))
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OOp:open_db", kwlist, &name, &flags_obj, &create))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "database flags"))
     return NULL;
   PyObject *txn_obj = create ? Env_write(self, NULL) : Env_read(self, NULL);
   if (txn_obj == NULL)
@@ -2105,15 +2158,10 @@ static PyObject *Txn_put(TxnObject *self, PyObject *const *args, Py_ssize_t narg
   MDBX_dbi dbi;
   if (optional_db(self, db_obj, &dbi) == (DbObject *)-1)
     return NULL;
-  unsigned long flags = 0;
+  uint32_t flags = 0;
   if (flags_obj != NULL) {
-    flags = PyLong_AsUnsignedLong(flags_obj);
-    if (PyErr_Occurred())
+    if (!parse_uint32(flags_obj, &flags, "put flags"))
       return NULL;
-    if (flags > UINT32_MAX) {
-      PyErr_SetString(PyExc_OverflowError, "put flags must fit uint32");
-      return NULL;
-    }
   }
   if (!validate_scalar_put_flags(flags, "put"))
     return NULL;
@@ -2188,9 +2236,11 @@ static PyObject *Txn_delete(TxnObject *self, PyObject *const *args, Py_ssize_t n
 
 static PyObject *Txn_replace(TxnObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"key", "value", "db", "flags", NULL};
-  PyObject *key_obj, *value_obj, *db_obj = Py_None;
-  unsigned int flags = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO|OI:replace", kwlist, &key_obj, &value_obj, &db_obj, &flags))
+  PyObject *key_obj, *value_obj, *db_obj = Py_None, *flags_obj = NULL;
+  uint32_t flags = 0;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO|OO:replace", kwlist, &key_obj, &value_obj, &db_obj, &flags_obj))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "replace flags"))
     return NULL;
   if (!check_txn(self, 1))
     return NULL;
@@ -2421,10 +2471,12 @@ error:
 
 static PyObject *Txn_put_many(TxnObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"items", "db", "flags", "detached", NULL};
-  PyObject *items_obj, *db_obj = Py_None;
-  unsigned int flags = 0;
+  PyObject *items_obj, *db_obj = Py_None, *flags_obj = NULL;
+  uint32_t flags = 0;
   int detached = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OIp:put_many", kwlist, &items_obj, &db_obj, &flags, &detached))
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OOp:put_many", kwlist, &items_obj, &db_obj, &flags_obj, &detached))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "put_many flags"))
     return NULL;
   if (!check_txn(self, 1))
     return NULL;
@@ -2739,8 +2791,11 @@ static PyObject *Db_drop(DbObject *self, PyObject *args, PyObject *kwargs) {
 static PyObject *Db_sequence(DbObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"txn", "increment", NULL};
   PyObject *txn_obj;
-  unsigned long long increment = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|K:sequence", kwlist, &txn_obj, &increment))
+  PyObject *increment_obj = NULL;
+  uint64_t increment = 0;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|O:sequence", kwlist, &txn_obj, &increment_obj))
+    return NULL;
+  if (increment_obj != NULL && !parse_uint64(increment_obj, &increment, "sequence increment"))
     return NULL;
   TxnObject *txn = Db_parse_txn(self, txn_obj, increment != 0);
   if (txn == NULL)
@@ -2979,9 +3034,11 @@ static PyObject *Cursor_count(CursorObject *self, PyObject *Py_UNUSED(ignored)) 
 
 static PyObject *Cursor_put(CursorObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"key", "value", "flags", NULL};
-  PyObject *key_obj, *value_obj;
-  unsigned int flags = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO|I:put", kwlist, &key_obj, &value_obj, &flags))
+  PyObject *key_obj, *value_obj, *flags_obj = NULL;
+  uint32_t flags = 0;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO|O:put", kwlist, &key_obj, &value_obj, &flags_obj))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "cursor put flags"))
     return NULL;
   if (!check_cursor(self, 1))
     return NULL;
@@ -3007,8 +3064,11 @@ static PyObject *Cursor_put(CursorObject *self, PyObject *args, PyObject *kwargs
 
 static PyObject *Cursor_delete(CursorObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"flags", NULL};
-  unsigned int flags = 0;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|I:delete", kwlist, &flags))
+  PyObject *flags_obj = NULL;
+  uint32_t flags = 0;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|O:delete", kwlist, &flags_obj))
+    return NULL;
+  if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "cursor delete flags"))
     return NULL;
   if (!check_cursor(self, 1))
     return NULL;

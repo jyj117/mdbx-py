@@ -3,9 +3,11 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
-## 0.1.0a1 - 2026-08-29
+## 1.0.1 - 2026-08-29
 
-- Initial alpha of the hand-written CPython C-API binding.
+- Initial stable public release of the hand-written CPython C-API binding.
+- Start the public version sequence at 1.0.1 by maintainer choice; 1.0.0 and
+  all earlier development versions were never published to a package index.
 - Embed the official libmdbx 0.14.3 amalgamation.
 - Add environment, transaction, DBI and cursor APIs, Python exception mapping,
   C-loop batch primitives, thread affinity and post-fork rejection.

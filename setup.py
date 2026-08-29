@@ -14,6 +14,7 @@ from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 from setuptools.command.sdist import sdist
 
+
 class BuildExt(build_ext):
     """Use conservative release optimizations without changing MDBX durability."""
 
@@ -26,13 +27,21 @@ class BuildExt(build_ext):
                 ext.extra_compile_args += ["/O2", "/GL", "/utf-8"]
                 ext.extra_link_args += ["/LTCG", "/OPT:REF", "/OPT:ICF"]
                 if strict:
-                    ext.extra_compile_args += ["/W4", "/WX"]
+                    # CPython 3.10's own pytime.h emits C4115 with current
+                    # MSVC, and CPython callback signatures intentionally
+                    # carry unused parameters.  Keep every other W4 warning
+                    # fatal while suppressing only those two known classes.
+                    ext.extra_compile_args += ["/W4", "/WX", "/wd4100", "/wd4115"]
             else:
                 ext.extra_compile_args += [
                     "-O3",
                     "-fvisibility=hidden",
-                    "-fno-semantic-interposition",
                 ]
+                if sys.platform.startswith("linux"):
+                    # This is a GCC/ELF optimization.  Apple Clang accepts the
+                    # spelling but reports it as unused, which is correctly
+                    # fatal in strict builds.
+                    ext.extra_compile_args += ["-fno-semantic-interposition"]
                 if not sanitize:
                     lto = "-flto=auto" if sys.platform.startswith("linux") else "-flto"
                     ext.extra_compile_args += [lto]
@@ -46,6 +55,12 @@ class BuildExt(build_ext):
                         "-Wno-cast-function-type",
                         "-Wno-missing-field-initializers",
                     ]
+                    if sys.platform == "darwin":
+                        # Apple's CPython build injects -Wunreachable-code.
+                        # The official libmdbx amalgamation intentionally uses
+                        # compile-time-disabled diagnostic branches, so keep
+                        # all other warnings fatal and suppress this one class.
+                        ext.extra_compile_args += ["-Wno-unreachable-code"]
                 if sanitize:
                     kinds = sanitize.replace(" ", "")
                     ext.extra_compile_args += [f"-fsanitize={kinds}", "-fno-omit-frame-pointer", "-O1"]
@@ -99,7 +114,7 @@ define_macros = [
     # details; overriding the header's supported macro keeps the dynamic symbol
     # table limited to PyInit__core and avoids collisions with other bindings.
     ("__dll_export", ""),
-    ("MDBX_BUILD_METADATA", '"clibmdbx-0.1.0a1"'),
+    ("MDBX_BUILD_METADATA", '"clibmdbx-1.0.1"'),
     ("MDBX_BUILD_FLAGS", '"setuptools O3 LTO hidden-symbols"'),
     ("MDBX_ENV_CHECKPID", "1"),
     ("MDBX_TXN_CHECKOWNER", "1"),
@@ -107,11 +122,15 @@ define_macros = [
 ]
 
 if sys.platform == "win32":
-    define_macros.extend([
-        ("_WIN32_WINNT", "0x0A00"),
-        ("WIN32_LEAN_AND_MEAN", "1"),
-        ("NOMINMAX", "1"),
-    ])
+    define_macros.extend(
+        [
+            ("_WIN32_WINNT", "0x0A00"),
+            ("WIN32_LEAN_AND_MEAN", "1"),
+            ("NOMINMAX", "1"),
+        ]
+    )
+
+system_libraries = ["advapi32", "ntdll", "user32"] if sys.platform == "win32" else []
 
 extension = Extension(
     "clibmdbx._core",
@@ -121,6 +140,7 @@ extension = Extension(
     ],
     include_dirs=["vendor/libmdbx"],
     define_macros=define_macros,
+    libraries=system_libraries,
     extra_compile_args=[],
     extra_link_args=[],
 )

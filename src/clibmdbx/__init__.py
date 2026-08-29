@@ -12,7 +12,7 @@ from . import _core as _native
 _native._check_interpreter()
 
 from ._core import *  # noqa: F403
-from ._core import __version__
+from ._core import __version__ as __version__
 
 del _native
 

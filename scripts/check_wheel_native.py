@@ -13,7 +13,6 @@ import sys
 import tempfile
 import zipfile
 
-
 WINDOWS_SYSTEM_DLLS = {
     "advapi32.dll",
     "bcrypt.dll",
@@ -117,9 +116,7 @@ def validate_dependencies(member: str, extracted: pathlib.Path, data: bytes) -> 
         }
     elif "macosx_" in extracted.parent.name:
         dependencies = inspect_macos(extracted)
-        unexpected = {
-            item for item in dependencies if not item.startswith(("/usr/lib/", "/System/Library/"))
-        }
+        unexpected = {item for item in dependencies if not item.startswith(("/usr/lib/", "/System/Library/"))}
     else:
         dependencies = inspect_linux(extracted)
         unexpected = {
@@ -138,11 +135,7 @@ def inspect_wheel(wheel: pathlib.Path) -> None:
     if not wheel.is_file():
         raise ValueError(f"not a wheel file: {wheel}")
     with zipfile.ZipFile(wheel) as archive, tempfile.TemporaryDirectory(prefix="clibmdbx-wheel-native-") as directory:
-        native = [
-            name
-            for name in archive.namelist()
-            if name.lower().endswith((".so", ".pyd", ".dylib", ".dll"))
-        ]
+        native = [name for name in archive.namelist() if name.lower().endswith((".so", ".pyd", ".dylib", ".dll"))]
         extension = [name for name in native if pathlib.PurePosixPath(name).name.startswith("_core.")]
         if len(extension) != 1:
             raise ValueError(f"expected one _core native extension, found {native}")

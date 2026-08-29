@@ -46,7 +46,9 @@ def percentile(values: list[int], fraction: float) -> float:
     return ordered[index] / 1_000
 
 
-def timed_reads(get: Callable[[bytes], bytes | None], keys: list[bytes], iterations: int, warmup: int) -> dict[str, Any]:
+def timed_reads(
+    get: Callable[[bytes], bytes | None], keys: list[bytes], iterations: int, warmup: int
+) -> dict[str, Any]:
     digest = hashlib.sha256()
     for i in range(warmup):
         value = get(keys[i % len(keys)])
@@ -305,7 +307,11 @@ def main() -> None:
     report: dict[str, Any] = {
         "schema": 1,
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "platform": {"python": platform.python_version(), "platform": platform.platform(), "machine": platform.machine()},
+        "platform": {
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+        },
         "config": vars(args) | {"path": str(args.path), "output": str(args.output)},
         "diagnostics": clibmdbx.diagnostics(),
         "results": {"clibmdbx": bench_clib(args.path, keys, args)},
