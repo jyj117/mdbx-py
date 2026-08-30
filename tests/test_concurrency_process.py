@@ -6,6 +6,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 
 import pytest
 
@@ -60,6 +61,123 @@ def test_environment_shared_readers(env: clibmdbx.Environment) -> None:
     for thread in threads:
         thread.join()
     assert errors.empty(), list(errors.queue)
+
+
+def test_environment_one_shot_get_is_safe_across_threads(env: clibmdbx.Environment) -> None:
+    with env.write() as txn:
+        txn.put_many([(str(i).encode(), str(i * i).encode()) for i in range(200)])
+    errors: queue.Queue[BaseException] = queue.Queue()
+
+    def worker(worker_index: int) -> None:
+        try:
+            for iteration in range(2_000):
+                value = (worker_index * 31 + iteration) % 200
+                assert env.get(str(value).encode()) == str(value * value).encode()
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.put(exc)
+
+    threads = [threading.Thread(target=worker, args=(index,)) for index in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+    assert errors.empty(), list(errors.queue)
+    assert env.reader_check() == 0
+
+
+def test_environment_one_shot_get_close_race_is_bounded(env: clibmdbx.Environment) -> None:
+    with env.write() as txn:
+        txn.put(b"key", b"value")
+    started = threading.Event()
+    stopped = threading.Event()
+    errors: queue.Queue[BaseException] = queue.Queue()
+
+    def reader() -> None:
+        started.set()
+        try:
+            while not stopped.is_set():
+                assert env.get(b"key") == b"value"
+        except clibmdbx.ClosedError:
+            pass
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.put(exc)
+
+    thread = threading.Thread(target=reader)
+    thread.start()
+    assert started.wait(timeout=2)
+    env.close()
+    stopped.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert errors.empty(), list(errors.queue)
+    env.close()
+
+
+def test_environment_one_shot_get_observes_only_committed_writer_values(env: clibmdbx.Environment) -> None:
+    with env.write() as txn:
+        txn.put(b"key", b"0")
+    stopped = threading.Event()
+    errors: queue.Queue[BaseException] = queue.Queue()
+
+    def writer() -> None:
+        try:
+            for iteration in range(300):
+                with env.write() as txn:
+                    txn.put(b"key", str(iteration & 1).encode())
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.put(exc)
+        finally:
+            stopped.set()
+
+    def reader() -> None:
+        try:
+            while not stopped.is_set():
+                assert env.get(b"key") in (b"0", b"1")
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.put(exc)
+
+    readers = [threading.Thread(target=reader) for _ in range(4)]
+    writing = threading.Thread(target=writer)
+    for thread in readers:
+        thread.start()
+    writing.start()
+    writing.join(timeout=10)
+    assert not writing.is_alive()
+    for thread in readers:
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+    assert errors.empty(), list(errors.queue)
+    assert env.get(b"key") in (b"0", b"1")
+
+
+def test_database_delete_rejects_pending_environment_operation(env: clibmdbx.Environment) -> None:
+    db = env.open_db(b"delete-race", create=True)
+    owner = env.write()
+    entered = threading.Event()
+    errors: queue.Queue[BaseException] = queue.Queue()
+
+    def waiting_writer() -> None:
+        entered.set()
+        try:
+            txn = env.write()
+            txn.abort()
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.put(exc)
+
+    thread = threading.Thread(target=waiting_writer)
+    thread.start()
+    assert entered.wait(timeout=2)
+    # The second writer is blocked in mdbx_txn_begin while owner holds the
+    # single-writer lock, so deleting a shared DBI must reject that operation.
+    time.sleep(0.05)
+    with pytest.raises(clibmdbx.BusyError, match="environment operation"):
+        db.drop(owner, delete=True)
+    owner.abort()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert errors.empty(), list(errors.queue)
+    db.close()
 
 
 def test_set_option_does_not_deadlock_behind_writer_gil(tmp_path) -> None:
@@ -268,12 +386,12 @@ def test_forked_handles_are_rejected(env: clibmdbx.Environment) -> None:
     if pid == 0:  # pragma: no cover - separate process
         try:
             checks = 0
-            for call in (env.info, lambda: txn.get(b"x"), cur.first, txn.abort, cur.close):
+            for call in (env.info, lambda: env.get(b"x"), lambda: txn.get(b"x"), cur.first, txn.abort, cur.close):
                 try:
                     call()
                 except clibmdbx.ForkError:
                     checks += 1
-            os._exit(0 if checks == 5 else 3)
+            os._exit(0 if checks == 6 else 3)
         except BaseException:
             os._exit(4)
     _, status = os.waitpid(pid, 0)

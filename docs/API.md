@@ -15,6 +15,15 @@ inactive preallocated read handle; call `renew()` before use. A contradictory
 upstream-supported nested write transaction; the parent is blocked until the
 child finishes.
 
+`env.get(key, db=None, default=None)` is the one-shot point-read path. It begins
+a fresh read transaction, performs `mdbx_get`, copies the value, and aborts the
+transaction before returning, all inside one C call. No `Transaction` object or
+reader slot survives the call. The DBI must already be committed. Use an
+explicit transaction for multi-key or multi-DBI snapshot consistency.
+The warm uncontended path retains the GIL; when a writer is pending or active,
+the read begin temporarily releases it so sustained reader loops cannot starve
+write progress.
+
 `txn.get(key, db=None, default=None)` returns the default on `MDBX_NOTFOUND`;
 `txn[key]` raises `KeyError`. `delete` returns whether a record existed. `put`
 returns `False` for `NOOVERWRITE`/`NODUPDATA` conflicts and otherwise `True`.

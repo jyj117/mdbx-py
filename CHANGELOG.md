@@ -3,6 +3,20 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
+## 1.0.2 - 2026-08-30
+
+- Add `Environment.get(key, db=None, default=None)` for warm point lookups. It
+  begins, reads, copies, and aborts one short read transaction entirely in C,
+  without allocating a Python `Transaction` or retaining thread-affine state.
+- Preserve fresh-snapshot and safe-copy semantics, committed-DBI validation,
+  fork rejection, reader-limit error mapping, and deterministic close cleanup.
+- Prevent tight one-shot reader loops from starving a pending or active writer;
+  the uncontended read-only hot path continues to retain the GIL for speed.
+- Reject deleting a DBI while an environment-level native operation may still
+  reference it, closing a lifecycle race introduced by writer-aware yielding.
+- Add single/multi-thread stress, close-race, reader exhaustion, large-value,
+  NUL/empty-value, cross-environment DBI, fork, ASan and UBSan coverage.
+
 ## 1.0.1 - 2026-08-29
 
 - Initial stable public release of the hand-written CPython C-API binding.

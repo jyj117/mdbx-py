@@ -8,8 +8,8 @@
     "component": {
       "type": "library",
       "name": "clibmdbx",
-      "version": "1.0.1",
-      "purl": "pkg:pypi/clibmdbx@1.0.1",
+      "version": "1.0.2",
+      "purl": "pkg:pypi/clibmdbx@1.0.2",
       "licenses": [{"license": {"id": "Apache-2.0"}}],
       "externalReferences": [
         {"type": "vcs", "url": "https://github.com/jyj117/mdbx-py"},
@@ -51,7 +51,7 @@
     }
   ],
   "dependencies": [
-    {"ref": "pkg:pypi/clibmdbx@1.0.1", "dependsOn": ["pkg:github/Mithril-mine/libmdbx@v0.14.3", "pkg:pypi/typing_extensions"]},
+    {"ref": "pkg:pypi/clibmdbx@1.0.2", "dependsOn": ["pkg:github/Mithril-mine/libmdbx@v0.14.3", "pkg:pypi/typing_extensions"]},
     {"ref": "pkg:github/Mithril-mine/libmdbx@v0.14.3", "dependsOn": []},
     {"ref": "pkg:pypi/typing_extensions", "dependsOn": []}
   ]

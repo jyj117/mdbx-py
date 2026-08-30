@@ -21,7 +21,7 @@
 
 #include "mdbx.h"
 
-#define CLIBMDBX_VERSION "1.0.1"
+#define CLIBMDBX_VERSION "1.0.2"
 #define CLIBMDBX_RELEASE_TAG "v0.14.3"
 #define CLIBMDBX_RELEASE_COMMIT "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0"
 #define CLIBMDBX_AMALGAMATION_COMMIT "251562b2dc55266d8e6d0e6627ec88ecb410702f"
@@ -74,6 +74,7 @@ struct EnvObject {
   long pid;
   Py_ssize_t active_txns;
   Py_ssize_t active_write_txns;
+  Py_ssize_t pending_write_begins;
   Py_ssize_t active_operations;
   unsigned long write_owner;
   int closed;
@@ -763,6 +764,7 @@ static PyObject *Env_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
     self->pid = current_pid();
     self->active_txns = 0;
     self->active_write_txns = 0;
+    self->pending_write_begins = 0;
     self->active_operations = 0;
     self->write_owner = 0;
     self->closed = 1;
@@ -1377,7 +1379,10 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
   MDBX_txn_flags_t txn_flags = (MDBX_txn_flags_t)(flags | (write ? 0u : (unsigned)MDBX_TXN_RDONLY));
   MDBX_txn *txn = NULL;
   int rc;
+  const int root_write_begin = write && parent == NULL;
   self->active_operations++;
+  if (root_write_begin)
+    self->pending_write_begins++;
   if (parent != NULL && txn_chain_has_open_cursors(parent)) {
     /* A nested begin manipulates the parent's cursor backup chain. */
     rc = mdbx_txn_begin(self->env, parent_native, txn_flags, &txn);
@@ -1386,6 +1391,8 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
     rc = mdbx_txn_begin(self->env, parent_native, txn_flags, &txn);
     Py_END_ALLOW_THREADS
   }
+  if (root_write_begin)
+    self->pending_write_begins--;
   end_env_operation(self);
   if (rc != MDBX_SUCCESS)
     return raise_mdbx(rc, "mdbx_txn_begin");
@@ -1416,9 +1423,11 @@ static PyObject *Env_write(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
   MDBX_txn *txn = NULL;
   int rc;
   self->active_operations++;
+  self->pending_write_begins++;
   Py_BEGIN_ALLOW_THREADS
   rc = mdbx_txn_begin(self->env, NULL, MDBX_TXN_READWRITE, &txn);
   Py_END_ALLOW_THREADS
+  self->pending_write_begins--;
   end_env_operation(self);
   if (rc != MDBX_SUCCESS)
     return raise_mdbx(rc, "mdbx_txn_begin");
@@ -1858,9 +1867,9 @@ static PyObject *Txn_databases(TxnObject *self, PyObject *Py_UNUSED(ignored)) {
   return list;
 }
 
-static DbObject *optional_db(TxnObject *txn, PyObject *obj, MDBX_dbi *dbi) {
+static DbObject *optional_db_for_env(EnvObject *env, TxnObject *txn, PyObject *obj, MDBX_dbi *dbi) {
   if (obj == NULL || obj == Py_None) {
-    *dbi = txn->env->main_dbi;
+    *dbi = env->main_dbi;
     return NULL;
   }
   if (!PyObject_TypeCheck(obj, &DbType)) {
@@ -1868,10 +1877,118 @@ static DbObject *optional_db(TxnObject *txn, PyObject *obj, MDBX_dbi *dbi) {
     return (DbObject *)-1;
   }
   DbObject *db = (DbObject *)obj;
-  if (!check_db(db, txn))
-    return (DbObject *)-1;
+  if (txn != NULL) {
+    if (!check_db(db, txn))
+      return (DbObject *)-1;
+  } else {
+    if (db->closed || db->state == NULL || !db->state->valid) {
+      PyErr_SetString(ClosedError, "database handle is closed");
+      return (DbObject *)-1;
+    }
+    if (db->env != env) {
+      PyErr_SetString(PyExc_ValueError, "database handle belongs to a different environment");
+      return (DbObject *)-1;
+    }
+    if (db->state->creator != NULL) {
+      PyErr_SetString(BadTxnError, "database was created by an uncommitted transaction");
+      return (DbObject *)-1;
+    }
+  }
   *dbi = db->state->dbi;
   return db;
+}
+
+static DbObject *optional_db(TxnObject *txn, PyObject *obj, MDBX_dbi *dbi) {
+  return optional_db_for_env(txn->env, txn, obj, dbi);
+}
+
+static int parse_fastcall_keywords(const char *function, PyObject *const *args, Py_ssize_t nargs,
+                                   PyObject *kwnames, const char *const *names, Py_ssize_t count,
+                                   Py_ssize_t required, PyObject **values);
+
+/* One-shot reads normally keep the GIL for their short native lifetime.
+   Transaction.get() already holds it around mdbx_get(); avoiding a release /
+   reacquire around mdbx_txn_begin() is the main win for warm point lookups.
+   A writer waiting in mdbx_txn_begin(), or returning from a native commit,
+   cannot reacquire the GIL while tight reader loops retain it, however.  While
+   a writer is pending or active, release the GIL around the read begin so the
+   writer gets a scheduling opportunity without penalizing the ordinary
+   uncontended path.  No native transaction escapes this call, so there is no
+   thread-affine state to retain, reset, or clean up during Environment.close(). */
+static PyObject *Env_get(EnvObject *self, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
+  PyObject *key_obj, *db_obj = Py_None, *default_obj = Py_None;
+  if (kwnames == NULL) {
+    if (nargs < 1 || nargs > 3) {
+      PyErr_Format(PyExc_TypeError, "get() takes 1 to 3 positional arguments (%zd given)", nargs);
+      return NULL;
+    }
+    key_obj = args[0];
+    if (nargs >= 2)
+      db_obj = args[1];
+    if (nargs >= 3)
+      default_obj = args[2];
+  } else {
+    static const char *const names[] = {"key", "db", "default"};
+    PyObject *values[3];
+    if (!parse_fastcall_keywords("get", args, nargs, kwnames, names, 3, 1, values))
+      return NULL;
+    key_obj = values[0];
+    if (values[1] != NULL)
+      db_obj = values[1];
+    if (values[2] != NULL)
+      default_obj = values[2];
+  }
+
+  if (!begin_env_operation(self))
+    return NULL;
+  MDBX_dbi dbi;
+  if (optional_db_for_env(self, NULL, db_obj, &dbi) == (DbObject *)-1) {
+    end_env_operation(self);
+    return NULL;
+  }
+  Py_buffer key_view;
+  MDBX_val key, data;
+  if (!object_to_val(key_obj, &key_view, &key, "key")) {
+    end_env_operation(self);
+    return NULL;
+  }
+
+  MDBX_txn *txn = NULL;
+  int begin_rc;
+  if (self->pending_write_begins != 0 || self->active_write_txns != 0) {
+    Py_BEGIN_ALLOW_THREADS
+    begin_rc = mdbx_txn_begin(self->env, NULL, MDBX_TXN_RDONLY, &txn);
+    Py_END_ALLOW_THREADS
+  } else {
+    begin_rc = mdbx_txn_begin(self->env, NULL, MDBX_TXN_RDONLY, &txn);
+  }
+  int get_rc = begin_rc;
+  int abort_rc = MDBX_SUCCESS;
+  PyObject *result = NULL;
+  if (begin_rc == MDBX_SUCCESS) {
+    get_rc = mdbx_get(txn, dbi, &key, &data);
+    if (get_rc == MDBX_SUCCESS)
+      result = val_to_bytes(&data);
+    abort_rc = mdbx_txn_abort(txn);
+  }
+  PyBuffer_Release(&key_view);
+  end_env_operation(self);
+
+  if (PyErr_Occurred()) {
+    Py_XDECREF(result);
+    return NULL;
+  }
+  if (begin_rc != MDBX_SUCCESS)
+    return raise_mdbx(begin_rc, "mdbx_txn_begin (Environment.get)");
+  if (get_rc != MDBX_SUCCESS && get_rc != MDBX_NOTFOUND)
+    return raise_mdbx(get_rc, "mdbx_get (Environment.get)");
+  if (abort_rc != MDBX_SUCCESS) {
+    Py_XDECREF(result);
+    return raise_mdbx(abort_rc, "mdbx_txn_abort (Environment.get)");
+  }
+  if (get_rc == MDBX_NOTFOUND)
+    return Py_NewRef(default_obj);
+  return result;
 }
 
 static PyObject *new_database(EnvObject *env, MDBX_dbi dbi, PyObject *name, TxnObject *creator) {
@@ -2766,9 +2883,10 @@ static PyObject *Db_drop(DbObject *self, PyObject *args, PyObject *kwargs) {
     Py_ssize_t transaction_chain = 0;
     for (TxnObject *scope = txn; scope != NULL; scope = scope->parent)
       transaction_chain++;
-    if (self->env->active_txns > transaction_chain) {
+    if (self->env->active_txns > transaction_chain || self->env->active_operations != 0) {
       PyErr_SetString(BusyError,
-                      "cannot delete a database while another transaction may still reference its shared DBI");
+                      "cannot delete a database while another transaction or environment operation may still "
+                      "reference its shared DBI");
       return NULL;
     }
   }
@@ -3425,6 +3543,8 @@ static PyMethodDef Env_methods[] = {
     {"begin", (PyCFunction)Env_begin, METH_VARARGS | METH_KEYWORDS, "Begin a read or write transaction."},
     {"read", (PyCFunction)Env_read, METH_NOARGS, "Begin a read transaction."},
     {"write", (PyCFunction)Env_write, METH_NOARGS, "Begin a write transaction (single writer per environment)."},
+    {"get", (PyCFunction)(void (*)(void))Env_get, METH_FASTCALL | METH_KEYWORDS,
+     "get(key, db=None, default=None) -> bytes or default using one short read transaction"},
     {"open_db", (PyCFunction)Env_open_db, METH_VARARGS | METH_KEYWORDS, "Open a persistent database handle."},
     {"close", (PyCFunction)Env_close, METH_VARARGS | METH_KEYWORDS, "Close the environment idempotently."},
     {"stat", (PyCFunction)Env_stat, METH_NOARGS, "Return default table statistics."},

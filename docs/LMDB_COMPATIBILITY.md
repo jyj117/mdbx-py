@@ -12,6 +12,7 @@ The comparison baseline reviewed for this release is `python-lmdb` 2.3.0.
 | --- | --- | --- |
 | Open environment | `lmdb.open(...)` / `lmdb.Environment(...)` | `clibmdbx.open(...)` / `clibmdbx.Environment(...)` |
 | Read/write scope | `env.begin(write=...)` context | `env.begin(write=...)`, `env.read()`, `env.write()` contexts |
+| One-shot point read | short `env.begin()` plus `txn.get()` | `env.get()` performs the complete short transaction in one C call |
 | Named database | `env.open_db(...)` | `env.open_db(...)` or transaction-scoped `txn.open_db(...)` |
 | Missing key | `txn.get()` returns `None`/default; indexing raises | Same |
 | Write conflicts | `put()` returns `False` | Same for `NOOVERWRITE`/`NODUPDATA` |
