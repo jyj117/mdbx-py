@@ -10,7 +10,7 @@ directly. The extension embeds the official libmdbx 0.14.3 amalgamation, so a
 wheel does not load a system `libmdbx` and has no runtime Python dependencies.
 It does not use ctypes, CFFI, Cython, Rust, or a helper service.
 
-> **Stable release:** 1.0.2 deliberately uses a CPython-version-specific ABI
+> **Stable release:** 1.0.3 deliberately uses a CPython-version-specific ABI
 > for maximum hot-path performance. Public API compatibility follows Semantic
 > Versioning within the 1.x line.
 
@@ -89,8 +89,17 @@ not retain a transaction between calls. Use an explicit read transaction and
   be finalized safely by a different Python worker. libmdbx still requires a
   write transaction to finish on its creator OS thread: an accidental
   cross-thread final reference is marked broken and queued, never unlocked on
-  the wrong thread. Its owner reaps it automatically on the next environment
-  operation or explicitly with `env.reap_orphaned_transactions()`.
+  the wrong thread. Owner identity uses CPython's unique thread-state ID, so a
+  newly created thread cannot impersonate an exited owner when the OS reuses a
+  numeric thread ID. The real owner reaps the transaction automatically on its
+  next environment operation or explicitly with
+  `env.reap_orphaned_transactions()`. If that owner has exited, the environment
+  is faulted: new transactions and native environment operations raise
+  `BusyError` immediately. Monitor `env.orphaned_write_transactions` and
+  restart the process after draining service traffic. A writer that was already
+  waiting inside libmdbx before the fault may instead be awakened with
+  `PanicError` when the owner exits; treat both results as the same restart-only
+  production fault. Never try to abort the native writer from another thread.
 - `drop(delete=True)` is rejected while an unrelated transaction may still
   reference the shared DBI. It invalidates all duplicate Python aliases after
   the native delete-and-close succeeds. Creation rolled back at any nesting
@@ -99,6 +108,14 @@ not retain a transaction between calls. Use an explicit read transaction and
 Durability defaults are upstream libmdbx defaults. Unsafe modes such as
 `SAFE_NOSYNC`, `UTTERLY_NOSYNC`, `WRITEMAP`, and `NOMEMINIT` are opt-in constants;
 the binding never enables them silently.
+
+For capacity thresholds, long-reader detection, disk-full recovery, bounded
+writer waits and shutdown ordering, follow the
+[production operations runbook](docs/PRODUCTION_OPERATIONS.md). In particular,
+plan the geometry `upper` bound before opening every process: online map growth
+can legitimately return `UnableExtendMapError`, including when address-space
+layout prevents remapping, and the supported recovery is a coordinated close
+and reopen with the larger upper bound.
 
 ## Major APIs
 

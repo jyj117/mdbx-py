@@ -67,9 +67,34 @@ def test_readers_full_maps_to_specific_exception(tmp_path: pathlib.Path) -> None
         with pytest.raises(clibmdbx.ReadersFullError):
             for _ in range(1024):
                 transactions.append(env.read())
+        assert env.reader_check() == 0
     finally:
         for txn in transactions:
             txn.abort()
+        with env.read():
+            pass
+        env.close()
+
+
+def test_reset_readers_keep_slots_until_abort(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "reset-readers"
+    path.mkdir()
+    env = clibmdbx.Environment(path, max_readers=1)
+    transactions = []
+    try:
+        with pytest.raises(clibmdbx.ReadersFullError):
+            for _ in range(1024):
+                transactions.append(env.read())
+        for txn in transactions:
+            txn.reset()
+        with pytest.raises(clibmdbx.ReadersFullError):
+            env.read()
+        assert env.reader_check() == 0
+    finally:
+        for txn in transactions:
+            txn.abort()
+        with env.read():
+            pass
         env.close()
 
 

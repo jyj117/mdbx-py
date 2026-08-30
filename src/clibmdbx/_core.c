@@ -21,7 +21,7 @@
 
 #include "mdbx.h"
 
-#define CLIBMDBX_VERSION "1.0.2"
+#define CLIBMDBX_VERSION "1.0.3"
 #define CLIBMDBX_RELEASE_TAG "v0.14.3"
 #define CLIBMDBX_RELEASE_COMMIT "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0"
 #define CLIBMDBX_AMALGAMATION_COMMIT "251562b2dc55266d8e6d0e6627ec88ecb410702f"
@@ -61,7 +61,7 @@ struct OrphanTxn {
   OrphanTxn *next;
   MDBX_txn *txn;
   TxnObject *parent;
-  unsigned long owner;
+  uint64_t owner;
 };
 
 struct EnvObject {
@@ -76,7 +76,7 @@ struct EnvObject {
   Py_ssize_t active_write_txns;
   Py_ssize_t pending_write_begins;
   Py_ssize_t active_operations;
-  unsigned long write_owner;
+  uint64_t write_owner;
   int closed;
 };
 
@@ -85,7 +85,7 @@ struct TxnObject {
   MDBX_txn *txn;
   EnvObject *env;
   TxnObject *parent;
-  unsigned long owner;
+  uint64_t owner;
   Py_ssize_t active_children;
   Py_ssize_t open_cursors;
   int has_db_changes;
@@ -108,7 +108,7 @@ struct CursorObject {
   MDBX_cursor *cursor;
   TxnObject *txn;
   DbObject *db;
-  unsigned long owner;
+  uint64_t owner;
   int positioned;
   int iter_started;
   int closed;
@@ -162,6 +162,11 @@ static PyObject *DiskError;
 static PyObject *ForkError;
 static PyObject *ClosedError;
 
+/* PyThread_get_thread_ident() and native thread IDs may be reused as soon as a
+   thread exits.  CPython 3.10+ exposes an explicitly unique thread-state ID;
+   use it for every public owner check so a replacement thread can never
+   impersonate a departed transaction or cursor owner. */
+
 static long current_pid(void) {
 #ifdef _WIN32
   return (long)_getpid();
@@ -170,7 +175,7 @@ static long current_pid(void) {
 #endif
 }
 
-static unsigned long current_thread(void) { return PyThread_get_thread_ident(); }
+static uint64_t current_thread(void) { return PyThreadState_GetID(PyThreadState_Get()); }
 
 static PyObject *exception_for_code(int rc) {
   switch (rc) {
@@ -289,7 +294,9 @@ static PyObject *raise_mdbx(int rc, const char *operation) {
 }
 
 static Py_ssize_t reap_orphaned_write_txns(EnvObject *env) {
-  const unsigned long thread = current_thread();
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return -1;
   Py_ssize_t reaped = 0;
   Py_ssize_t release_env_refs = 0;
   OrphanTxn **link = &env->orphaned_txns;
@@ -326,6 +333,25 @@ static Py_ssize_t reap_orphaned_write_txns(EnvObject *env) {
   return reaped;
 }
 
+static Py_ssize_t count_orphaned_write_txns(const EnvObject *env) {
+  Py_ssize_t count = 0;
+  for (const OrphanTxn *orphan = env->orphaned_txns; orphan != NULL; orphan = orphan->next)
+    count++;
+  return count;
+}
+
+static int reject_unreapable_write_txns(EnvObject *env) {
+  const Py_ssize_t count = count_orphaned_write_txns(env);
+  if (count == 0)
+    return 1;
+  PyErr_Format(BusyError,
+               "environment is faulted by %zd write transaction(s) finalized on a non-owner thread; "
+               "their owner thread must call reap_orphaned_transactions(); if that owner exited, restart the "
+               "process and open a fresh Environment",
+               count);
+  return 0;
+}
+
 static int check_env(EnvObject *self) {
   if (self->closed || self->env == NULL) {
     PyErr_SetString(ClosedError, "environment is closed");
@@ -344,6 +370,13 @@ static int check_env(EnvObject *self) {
 
 static int begin_env_operation(EnvObject *self) {
   if (!check_env(self))
+    return 0;
+  /* An orphaned native writer whose owner is gone still owns libmdbx's
+     single-writer lock.  Fail closed for new native operations, including any
+     that might wait forever behind it.  Introspection, reader_check(),
+     explicit reaping and cleanup of already-active transactions remain
+     available. */
+  if (!reject_unreapable_write_txns(self))
     return 0;
   self->active_operations++;
   return 1;
@@ -369,7 +402,10 @@ static int check_txn(TxnObject *self, int require_write) {
   }
   if (!check_env(self->env))
     return 0;
-  if (self->owner != current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return 0;
+  if (self->owner != thread) {
     PyErr_SetString(ThreadError, "transactions and cursors are bound to the thread that created them");
     return 0;
   }
@@ -523,7 +559,10 @@ static int check_cursor(CursorObject *self, int require_write) {
     PyErr_SetString(ClosedError, "cursor is closed");
     return 0;
   }
-  if (self->owner != current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return 0;
+  if (self->owner != thread) {
     PyErr_SetString(ThreadError, "transactions and cursors are bound to the thread that created them");
     return 0;
   }
@@ -946,7 +985,12 @@ static PyObject *Env_stat(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
     return NULL;
   MDBX_stat stat;
   int rc;
-  if (self->active_write_txns != 0 && self->write_owner == current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0) {
+    end_env_operation(self);
+    return NULL;
+  }
+  if (self->active_write_txns != 0 && self->write_owner == thread) {
     /* Passing txn=NULL makes libmdbx use the current thread's writer when it
        owns one.  Retain the GIL in that case so cursor finalizers cannot race
        the writer; otherwise release it because libmdbx may wait for another
@@ -1132,7 +1176,12 @@ static PyObject *Env_set_flags(EnvObject *self, PyObject *args, PyObject *kwargs
   if (!begin_env_operation(self))
     return NULL;
   int rc;
-  if (self->active_write_txns != 0 && self->write_owner == current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0) {
+    end_env_operation(self);
+    return NULL;
+  }
+  if (self->active_write_txns != 0 && self->write_owner == thread) {
     /* Upstream deliberately lets a writer's owner change these settings
        without reacquiring its own lock.  Keep the GIL so a cursor finalizer
        cannot concurrently mutate that transaction's cursor list. */
@@ -1172,7 +1221,12 @@ static PyObject *Env_set_option(EnvObject *self, PyObject *args) {
   if (!begin_env_operation(self))
     return NULL;
   int rc;
-  if (self->active_write_txns != 0 && self->write_owner == current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0) {
+    end_env_operation(self);
+    return NULL;
+  }
+  if (self->active_write_txns != 0 && self->write_owner == thread) {
     rc = mdbx_env_set_option(self->env, (MDBX_option_t)option, (uint64_t)value);
   } else {
     Py_BEGIN_ALLOW_THREADS
@@ -1286,6 +1340,17 @@ static PyObject *Env_get_path(EnvObject *self, void *closure) {
   return Py_NewRef(self->path);
 }
 
+static PyObject *Env_get_orphaned_write_transactions(EnvObject *self, void *closure) {
+  (void)closure;
+  if (self->pid != current_pid()) {
+    PyErr_Format(ForkError,
+                 "environment was opened in PID %ld and cannot be reused in forked PID %ld; open a fresh Environment",
+                 self->pid, current_pid());
+    return NULL;
+  }
+  return PyLong_FromSsize_t(count_orphaned_write_txns(self));
+}
+
 static void txn_finish_bookkeeping(TxnObject *self) {
   if (!self->finished) {
     self->finished = 1;
@@ -1315,13 +1380,16 @@ static int txn_chain_has_open_cursors(const TxnObject *txn) {
 }
 
 static PyObject *new_transaction(EnvObject *env, TxnObject *parent, MDBX_txn *native, int readonly) {
+  const uint64_t owner = current_thread();
+  if (owner == 0)
+    return NULL;
   TxnObject *self = (TxnObject *)TxnType.tp_alloc(&TxnType, 0);
   if (self == NULL)
     return NULL;
   self->txn = native;
   self->env = (EnvObject *)Py_NewRef(env);
   self->parent = parent ? (TxnObject *)Py_NewRef(parent) : NULL;
-  self->owner = current_thread();
+  self->owner = owner;
   self->active_children = 0;
   self->open_cursors = 0;
   self->has_db_changes = 0;
@@ -1355,6 +1423,8 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
     return NULL;
   }
   if (!check_env(self))
+    return NULL;
+  if (!reject_unreapable_write_txns(self))
     return NULL;
   TxnObject *parent = NULL;
   MDBX_txn *parent_native = NULL;
@@ -1420,6 +1490,8 @@ static PyObject *Env_read(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
 static PyObject *Env_write(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
   if (!check_env(self))
     return NULL;
+  if (!reject_unreapable_write_txns(self))
+    return NULL;
   MDBX_txn *txn = NULL;
   int rc;
   self->active_operations++;
@@ -1461,7 +1533,8 @@ static int defer_write_txn_to_owner(TxnObject *self) {
   Py_INCREF(self->env);
   if (PyErr_WarnEx(PyExc_ResourceWarning,
                    "an unfinished write transaction was finalized on a non-owner thread; "
-                   "native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions()",
+                   "native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); "
+                   "if that thread exits, new transactions and native environment operations fail with BusyError",
                    1) < 0)
     PyErr_WriteUnraisable((PyObject *)self);
   return 1;
@@ -1469,16 +1542,19 @@ static int defer_write_txn_to_owner(TxnObject *self) {
 
 static void Txn_dealloc(TxnObject *self) {
   if (self->txn != NULL) {
-    if (self->env != NULL && self->env->pid == current_pid() && !self->readonly && self->owner != current_thread()) {
+    const uint64_t thread = current_thread();
+    if (thread == 0)
+      PyErr_WriteUnraisable((PyObject *)self);
+    if (self->env != NULL && self->env->pid == current_pid() && !self->readonly && self->owner != thread) {
       if (!defer_write_txn_to_owner(self))
         return;
     } else {
       int rc = MDBX_SUCCESS;
       if (self->env != NULL && self->env->pid == current_pid())
         rc = mdbx_txn_abort(self->txn);
-      /* Python and OS thread identifiers can eventually be reused.  Let the
-         engine's authoritative ownership check override our fast pre-check;
-         never discard a still-locked native writer after THREAD_MISMATCH. */
+      /* Let the engine's authoritative ownership check override our unique
+         thread-state fast check; never discard a still-locked native writer
+         after THREAD_MISMATCH. */
       if (!self->readonly && rc == MDBX_THREAD_MISMATCH) {
         if (!defer_write_txn_to_owner(self))
           return;
@@ -1565,7 +1641,10 @@ static PyObject *Txn_commit_ex(TxnObject *self, PyObject *Py_UNUSED(ignored)) {
 static PyObject *Txn_abort(TxnObject *self, PyObject *Py_UNUSED(ignored)) {
   if (self->finished || self->txn == NULL)
     Py_RETURN_NONE;
-  if (self->owner != current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return NULL;
+  if (self->owner != thread) {
     PyErr_SetString(ThreadError, "transaction must be aborted by its owner thread");
     return NULL;
   }
@@ -1607,7 +1686,10 @@ static PyObject *Txn_renew(TxnObject *self, PyObject *Py_UNUSED(ignored)) {
   }
   if (!check_env(self->env))
     return NULL;
-  if (self->owner != current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return NULL;
+  if (self->owner != thread) {
     PyErr_SetString(ThreadError, "transaction must be renewed by its owner thread");
     return NULL;
   }
@@ -1670,7 +1752,10 @@ static PyObject *Txn_get_flags(TxnObject *self, void *closure) {
     return PyLong_FromLong(MDBX_TXN_FINISHED);
   if (!check_env(self->env))
     return NULL;
-  if (self->owner != current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return NULL;
+  if (self->owner != thread) {
     PyErr_SetString(ThreadError, "transactions and cursors are bound to the thread that created them");
     return NULL;
   }
@@ -1756,7 +1841,10 @@ static PyObject *Txn_unpark(TxnObject *self, PyObject *args, PyObject *kwargs) {
   }
   if (!check_env(self->env))
     return NULL;
-  if (self->owner != current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return NULL;
+  if (self->owner != thread) {
     PyErr_SetString(ThreadError, "transaction must be unparked by its owner thread");
     return NULL;
   }
@@ -2999,7 +3087,7 @@ static PyObject *Txn_cursor(TxnObject *self, PyObject *args, PyObject *kwargs) {
   result->cursor = cursor;
   result->txn = (TxnObject *)Py_NewRef(self);
   result->db = db ? (DbObject *)Py_NewRef(db) : NULL;
-  result->owner = current_thread();
+  result->owner = self->owner;
   result->positioned = 0;
   result->iter_started = 0;
   result->closed = 0;
@@ -3039,7 +3127,10 @@ static PyObject *Cursor_close(CursorObject *self, PyObject *Py_UNUSED(ignored)) 
                  self->txn->env->pid, current_pid());
     return NULL;
   }
-  if (!self->txn->finished && self->owner != current_thread()) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return NULL;
+  if (!self->txn->finished && self->owner != thread) {
     PyErr_SetString(ThreadError, "an active cursor must be closed by its owner thread");
     return NULL;
   }
@@ -3216,7 +3307,7 @@ static PyObject *Cursor_renew(CursorObject *self, PyObject *arg) {
     PyErr_SetString(PyExc_ValueError, "transaction belongs to a different environment");
     return NULL;
   }
-  if (!self->txn->finished && self->owner != current_thread()) {
+  if (!self->txn->finished && self->owner != txn->owner) {
     PyErr_SetString(ThreadError, "an active cursor must be renewed by its owner thread");
     return NULL;
   }
@@ -3231,7 +3322,7 @@ static PyObject *Cursor_renew(CursorObject *self, PyObject *arg) {
     txn->open_cursors++;
   }
   Py_SETREF(self->txn, (TxnObject *)Py_NewRef(txn));
-  self->owner = current_thread();
+  self->owner = txn->owner;
   self->positioned = 0;
   self->iter_started = 0;
   Py_RETURN_NONE;
@@ -3408,6 +3499,7 @@ static PyObject *module_diagnostics(PyObject *module, PyObject *Py_UNUSED(ignore
       dict_set_str(dict, "release_commit", CLIBMDBX_RELEASE_COMMIT) < 0 ||
       dict_set_str(dict, "archive_sha256", CLIBMDBX_ARCHIVE_SHA256) < 0 ||
       dict_set_u64(dict, "pid", (uint64_t)current_pid()) < 0 ||
+      dict_set_str(dict, "owner_tracking", "CPython unique thread-state IDs") < 0 ||
       dict_set_str(dict, "python_version", Py_GetVersion()) < 0 ||
       dict_set_str(dict, "python_compiler", Py_GetCompiler()) < 0 ||
       dict_set_u64(upstream, "major", mdbx_version.major) < 0 ||
@@ -3567,9 +3659,12 @@ static PyMethodDef Env_methods[] = {
     {"__exit__", (PyCFunction)Env_exit, METH_VARARGS, NULL},
     {NULL, NULL, 0, NULL}};
 
-static PyGetSetDef Env_getset[] = {{"closed", (getter)Env_get_closed, NULL, "Whether the environment is closed.", NULL},
-                                   {"path", (getter)Env_get_path, NULL, "Original path object.", NULL},
-                                   {NULL, NULL, NULL, NULL, NULL}};
+static PyGetSetDef Env_getset[] = {
+    {"closed", (getter)Env_get_closed, NULL, "Whether the environment is closed.", NULL},
+    {"path", (getter)Env_get_path, NULL, "Original path object.", NULL},
+    {"orphaned_write_transactions", (getter)Env_get_orphaned_write_transactions, NULL,
+     "Number of write transactions awaiting owner-thread cleanup.", NULL},
+    {NULL, NULL, NULL, NULL, NULL}};
 
 static PyMethodDef Txn_methods[] = {
     {"commit", (PyCFunction)Txn_commit, METH_NOARGS, "Commit and finish the transaction."},

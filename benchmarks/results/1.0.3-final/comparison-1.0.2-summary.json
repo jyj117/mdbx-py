@@ -1,0 +1,52 @@
+{
+  "engines": {
+    "clibmdbx": {
+      "batch_get_ops_per_second_median": 2822205.772023787,
+      "cursor_scan_ops_per_second_median": 2947103.6160371946,
+      "one_shot_get_latency_us_median_run": {
+        "p50": 2.213,
+        "p95": 3.408,
+        "p99": 5.805
+      },
+      "one_shot_get_ops_per_second": {
+        "max": 514970.05699394026,
+        "median": 320925.7243726849,
+        "min": 217984.62257038793
+      },
+      "point_get_latency_us_median_run": {
+        "p50": 0.832,
+        "p95": 1.018,
+        "p99": 1.746
+      },
+      "point_get_ops_per_second": {
+        "max": 975641.178406421,
+        "median": 814963.0236280861,
+        "min": 388338.1156706272
+      },
+      "short_transaction_get_ops_per_second": {
+        "max": 395250.10838331084,
+        "median": 295605.742712899,
+        "min": 157776.0100623733
+      }
+    },
+    "libmdbx_ctypes_0_3_2": {
+      "batch_get_ops_per_second_median": 72425.16300591658,
+      "cursor_scan_ops_per_second_median": 61980.305212592015,
+      "point_get_latency_us_median_run": {
+        "p50": 10.198,
+        "p95": 18.481,
+        "p99": 47.685
+      },
+      "point_get_ops_per_second": {
+        "max": 85263.94396960275,
+        "median": 80592.23457604933,
+        "min": 40541.286963706196
+      }
+    }
+  },
+  "runs": [
+    "/tmp/clibmdbx-1.0.2-ab-run1.json",
+    "/tmp/clibmdbx-1.0.2-ab-run2.json",
+    "/tmp/clibmdbx-1.0.2-ab-run3.json"
+  ]
+}

@@ -65,7 +65,15 @@ destructor never performs the upstream-forbidden cross-thread unlock. Instead
 it marks the native transaction broken and defers abort to the owner. The next
 environment operation on that owner thread reaps it automatically;
 `env.reap_orphaned_transactions()` performs and reports the same cleanup
-explicitly. A `ResourceWarning` identifies this misuse.
+explicitly. A `ResourceWarning` identifies this misuse, and
+`env.orphaned_write_transactions` exposes the number still awaiting their real
+owner. Owner identity is scoped to a thread lifetime rather than a reusable
+numeric thread ID. If an owner exits, new transactions and native environment
+operations fail immediately with `BusyError`; discard and reopen the
+environment in a fresh process after draining traffic. A writer already waiting
+inside libmdbx when the owner exits may be awakened with `PanicError`; this is
+the same restart-only fault, not a retryable transaction error. Cross-thread
+native abort is never safe.
 
 No MDBX pointer is ever exposed to Python. This is deliberate: a page pointer
 can be invalidated by transaction end, cursor movement, renewal, remap, write or

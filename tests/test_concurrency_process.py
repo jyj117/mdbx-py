@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import gc
+import json
 import os
 import queue
 import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -363,18 +365,73 @@ def test_write_finalized_on_another_thread_is_reaped_by_owner(env: clibmdbx.Envi
         del orphan
         gc.collect()
 
-    thread = threading.Thread(target=worker)
-    thread.start()
-    thread.join()
+    with pytest.warns(ResourceWarning, match="write transaction was finalized"):
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
 
     # The non-owner destructor never unlocks the native writer.  Its owner can
     # explicitly reap it (ordinary subsequent environment use also reaps it).
+    assert env.orphaned_write_transactions == 1
     assert env.reap_orphaned_transactions() == 1
+    assert env.orphaned_write_transactions == 0
     assert env.reap_orphaned_transactions() == 0
     with env.read() as reader:
         assert reader.get(b"must-rollback") is None
     with env.write() as writer:
         writer.put(b"writer-still-works", b"yes")
+
+
+def test_exited_writer_owner_cannot_be_impersonated_by_reused_thread_id(tmp_path: Path) -> None:
+    path = tmp_path / "orphan-owner-exit"
+    helper = Path(__file__).with_name("helpers") / "orphaned_writer_owner_exit.py"
+    result = subprocess.run(
+        [sys.executable, str(helper), str(path)],
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout.strip().splitlines()[-1])
+    assert report["warnings"]
+    assert report["orphaned"] == 1
+    assert report["replacement_failures"] == []
+    assert report["info_succeeded"] is True
+    assert report["reader_check"] == 0
+    assert all(report[f"{name}_busy"] is True for name in ("read", "write", "get", "sync", "close"))
+
+    # Process exit releases the abandoned native lock.  No uncommitted value
+    # survives and a fresh Environment can be used normally.
+    reopened = clibmdbx.Environment(path)
+    assert reopened.get(b"uncommitted") is None
+    with reopened.write() as txn:
+        txn.put(b"recovered", b"yes")
+    reopened.close()
+
+
+def test_waiting_writer_is_released_when_orphan_owner_exits(tmp_path: Path) -> None:
+    path = tmp_path / "orphan-owner-exit-with-waiter"
+    helper = Path(__file__).with_name("helpers") / "orphaned_writer_with_waiter.py"
+    result = subprocess.run(
+        [sys.executable, str(helper), str(path)],
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout.strip().splitlines()[-1])
+    assert report["warnings"]
+    assert report["orphaned"] == 1
+    assert report["waiter_was_waiting"] is True
+    assert report["waiter_completed"] is True
+    assert report["waiter_exception"] in {"BusyError", "PanicError"}
+    assert report["waiter_latency_s"] < 10.0
+
+    reopened = clibmdbx.Environment(path)
+    assert reopened.get(b"uncommitted") is None
+    reopened.close()
 
 
 @pytest.mark.fork

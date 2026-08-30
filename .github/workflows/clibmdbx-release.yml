@@ -106,8 +106,52 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  production-edges:
+    needs: validate-tag
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install -U pip
+      - run: python -m pip install "setuptools==84.0.0" "wheel==0.48.0"
+      - run: CLIBMDBX_STRICT=1 python -m pip install -e . --no-build-isolation
+      - run: python scripts/audit_production_edges.py > /tmp/clibmdbx-production-edges.json
+      - name: Verify real filesystem exhaustion maps to DiskError
+        shell: bash
+        run: |
+          set -euo pipefail
+          mountpoint=/tmp/clibmdbx-limited-filesystem
+          sudo mkdir -p "$mountpoint"
+          sudo mount -t tmpfs -o size=16m tmpfs "$mountpoint"
+          sudo chown "$(id -u):$(id -g)" "$mountpoint"
+          trap 'sudo umount "$mountpoint"' EXIT
+          python scripts/probe_disk_full.py "$mountpoint/database" > /tmp/clibmdbx-disk-full.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("/tmp/clibmdbx-disk-full.json").read_text())
+          assert report["exception"] == "DiskError", report
+          assert report["code"] != 0, report
+          assert report["what"], report
+          assert report["reason"], report
+          assert report["close_exception"] in (None, "DiskError"), report
+          PY
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-production-edge-json
+          path: |
+            /tmp/clibmdbx-production-edges.json
+            /tmp/clibmdbx-disk-full.json
+          retention-days: 90
+
   assemble:
-    needs: [validate-tag, wheels, sdist]
+    needs: [validate-tag, wheels, sdist, production-edges]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

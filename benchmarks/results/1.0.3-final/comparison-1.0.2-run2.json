@@ -1,0 +1,161 @@
+{
+  "config": {
+    "batch_iterations": 5000,
+    "batch_size": 100,
+    "concurrent_iterations": 100000,
+    "cpu": 0,
+    "iterations": 500000,
+    "output": "/tmp/clibmdbx-1.0.2-ab-run2.json",
+    "path": "/tmp/clibmdbx-bench-rwn4uwco/db",
+    "records": 10000,
+    "skip_ctypes": false,
+    "threads": 4,
+    "value_size": 32,
+    "warmup": 100000
+  },
+  "diagnostics": {
+    "archive_sha256": "dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd",
+    "binding_version": "1.0.2",
+    "build": {
+      "compiler": "GNU C/C++ 11.4.0",
+      "datetime": "\"Aug 30 2026 10:55:49\"",
+      "flags": "setuptools O3 LTO hidden-symbols",
+      "metadata": "clibmdbx-1.0.2",
+      "options": "DEBUG=0 CHECKING=0 WORDBITS=64 BYTE_ORDER=LE BIGFOOT=1 ENV_CHECKPID=1 TXN_CHECKOWNER=1 64BIT_ATOMIC=AUTO=1 64BIT_CAS=AUTO=1 TRUST_RTC=AUTO=0 AVOID_MSYNC=0 REFUND=1 MINCORE=1 PGOP_STAT=1 PROFGC=0 PGET_STAT=1 _GNU_SOURCE=YES LOCKING=AUTO=2008 OFDLOCKS=AUTO=1 FALLOCATE=AUTO=1 CACHELINE_SIZE=64 CPU_WRITEBACK_INCOHERENT=0 MMAP_INCOHERENT_CPU_CACHE=0 MMAP_INCOHERENT_FILE_WRITE=0 UNALIGNED_OK=8",
+      "target": "Linux-AMD64"
+    },
+    "libmdbx": {
+      "expected_amalgamation_commit": "251562b2dc55266d8e6d0e6627ec88ecb410702f",
+      "git_commit": "251562b2dc55266d8e6d0e6627ec88ecb410702f",
+      "git_datetime": "2026-08-09T13:18:46+03:00",
+      "git_describe": "v0.14.3-0-g251562b2",
+      "git_tree": "e4baa5caf1001120895ba9282f645236e2fb160b",
+      "major": 0,
+      "minor": 14,
+      "patch": 3,
+      "prerelease": "",
+      "tweak": 0
+    },
+    "pid": 1776859,
+    "python_compiler": "[GCC 11.4.0]",
+    "python_version": "3.10.12 (main, Jun 22 2026, 18:55:27) [GCC 11.4.0]",
+    "release_commit": "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0",
+    "release_tag": "v0.14.3"
+  },
+  "platform": {
+    "machine": "x86_64",
+    "platform": "Linux-6.18.33.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "python": "3.10.12"
+  },
+  "results": {
+    "clibmdbx": {
+      "batch_get": {
+        "boundary_calls": 5000,
+        "operations": 500000,
+        "ops_per_second": 3180366.4226098,
+        "sample_digest": "b135d0aaf51d50b0f826095671055d21ea1ab8cf63333e48b58321e62612e497",
+        "seconds": 0.157214589
+      },
+      "concurrent_read": {
+        "operations": 400000,
+        "ops_per_second": 1312077.5717054985,
+        "seconds": 0.304860024,
+        "thread_digests": [
+          "42505846c5f7aa3df05e9118df2618c6ddcf8f9a31a33bdd214eac52e90006ca",
+          "000e75963a63ab368621a4912aed2f6fc64b8b1c472a1b6ba820b8dc4d48cdbf",
+          "f8cfdf46c450887734b917f30fb2af150dc0a56efcada7569f146159d7f84bf2",
+          "34dc698e758f84d54a78d5a3fd10813d79549b497ab7a61d4ffad7bfb852bed5"
+        ],
+        "threads": 4
+      },
+      "cursor_scan": {
+        "operations": 10000,
+        "ops_per_second": 3723491.9950507344,
+        "seconds": 0.002685651
+      },
+      "mixed_read_write": {
+        "average_cores": 1.029527938256147,
+        "cpu_seconds": 3.193595404,
+        "read_operations": 2776821,
+        "read_ops_per_second": 895171.2528943672,
+        "reader_threads": 3,
+        "seconds": 3.101999747,
+        "write_operations": 10000,
+        "write_ops_per_second": 3223.7268909100267
+      },
+      "one_shot_get": {
+        "average_cores": 0.9990192644651975,
+        "cpu_seconds": 1.556464921,
+        "latency_us": {
+          "mean": 2.5831256899999997,
+          "p50": 2.213,
+          "p95": 3.408,
+          "p99": 5.805
+        },
+        "operations": 500000,
+        "ops_per_second": 320925.7243726849,
+        "sample_digest": "39231898472b8e97d9129e1f5814254fe9bfc222f97c36d8b690ff109677c5a2",
+        "seconds": 1.5579929
+      },
+      "point_get": {
+        "average_cores": 0.9993988979431063,
+        "cpu_seconds": 0.613155977,
+        "latency_us": {
+          "mean": 0.91945347,
+          "p50": 0.832,
+          "p95": 1.018,
+          "p99": 1.746
+        },
+        "operations": 500000,
+        "ops_per_second": 814963.0236280861,
+        "sample_digest": "39231898472b8e97d9129e1f5814254fe9bfc222f97c36d8b690ff109677c5a2",
+        "seconds": 0.613524768
+      },
+      "short_transaction_get": {
+        "average_cores": 0.9996875541893362,
+        "cpu_seconds": 1.690913622,
+        "latency_us": {
+          "mean": 2.974356742,
+          "p50": 2.683,
+          "p95": 3.509,
+          "p99": 5.964
+        },
+        "operations": 500000,
+        "ops_per_second": 295605.742712899,
+        "sample_digest": "39231898472b8e97d9129e1f5814254fe9bfc222f97c36d8b690ff109677c5a2",
+        "seconds": 1.691442106
+      }
+    },
+    "libmdbx_ctypes_0_3_2": {
+      "batch_get": {
+        "boundary_calls": 500000,
+        "operations": 500000,
+        "ops_per_second": 99024.08978916338,
+        "sample_digest": "b135d0aaf51d50b0f826095671055d21ea1ab8cf63333e48b58321e62612e497",
+        "seconds": 5.049276404
+      },
+      "cursor_scan": {
+        "operations": 10000,
+        "ops_per_second": 70797.90721103092,
+        "seconds": 0.141247113
+      },
+      "point_get": {
+        "average_cores": 0.9987583919048071,
+        "cpu_seconds": 5.856862499,
+        "latency_us": {
+          "mean": 11.310953512,
+          "p50": 9.731,
+          "p95": 15.014,
+          "p99": 45.967
+        },
+        "operations": 500000,
+        "ops_per_second": 85263.94396960275,
+        "sample_digest": "39231898472b8e97d9129e1f5814254fe9bfc222f97c36d8b690ff109677c5a2",
+        "seconds": 5.864143467
+      }
+    }
+  },
+  "rss_max_kib": 49360,
+  "schema": 1,
+  "timestamp_utc": "2026-08-30T09:04:09Z"
+}

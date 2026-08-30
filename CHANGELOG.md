@@ -3,6 +3,28 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
+## 1.0.3 - 2026-08-30
+
+- Replace reusable numeric OS/Python thread identifiers with CPython's unique
+  thread-state IDs for every transaction, cursor, writer owner and deferred
+  writer cleanup record. This prevents a replacement thread from impersonating
+  an exited write owner and attempting an invalid native unlock.
+- Treat a write transaction finalized away from an owner that cannot reap it as
+  a faulted environment: new transactions and native environment operations now
+  fail immediately with `BusyError` instead of waiting forever on libmdbx's
+  single-writer lock. Introspection, `reader_check()`, explicit reaping and
+  cleanup of already-active transactions remain available.
+- Expose `Environment.orphaned_write_transactions` for health monitoring and
+  make the `ResourceWarning` state and process-restart recovery explicit.
+- Add cross-platform regression coverage that deliberately exits a write-owner
+  thread, churns replacement threads, and proves a writer already waiting in
+  libmdbx is released with a typed production fault, plus quantitative gates for
+  writer wait/TRY behavior, busy and clean close latency, `MapFullError` recovery,
+  geometry reopen, crashed-reader cleanup, long-reader lag and retained pages.
+- Add real filesystem-exhaustion and combined production-edge audit scripts for
+  release validation. The disk-full probe verifies libmdbx's native error is
+  exposed as `DiskError`, separately from the geometry-only `MapFullError`.
+
 ## 1.0.2 - 2026-08-30
 
 - Add `Environment.get(key, db=None, default=None)` for warm point lookups. It

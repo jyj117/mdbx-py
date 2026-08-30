@@ -30,6 +30,37 @@ reference. It also requires one-shot throughput to remain at least 50% of the
 semantically different reused-transaction path. These are conservative
 regression floors, not expected performance.
 
+## 1.0.3 final review
+
+Three CPU-0-pinned runs on 2026-08-30 used CPython 3.10.12, GCC 11.4,
+Linux x86_64 under WSL2 and databases on the native `/tmp` filesystem. The
+host varied substantially during the sequence: reused-transaction point reads
+ranged from 330,418 to 787,893 ops/s and four-reader throughput from 484,701 to
+1,039,117 ops/s, while CPU/wall ratios stayed near one. No runs were discarded.
+
+The conservative three-run medians were 349,100 point reads/s (P50/P95/P99
+1.653/2.604/5.380 us), 1,306,329 batch keys/s and 1,305,641 cursor rows/s.
+These remained 5.90x, 21.00x and 26.84x faster than the pinned ctypes 0.3.2
+reference. `Environment.get()` was 1.74x faster than its equivalent explicit
+short-transaction sequence, and all digest comparisons matched. Mixed writers
+completed 10,000 operations in every run; maximum RSS was 48,708--49,912 KiB.
+
+An immediate same-build spot check outside the throttled sequence reached
+861,068 reused-transaction point reads/s with P50/P95/P99 of
+0.796/0.982/1.595 us. A same-period 1.0.2 wheel A/B reached P50 0.832 us, so the
+unique thread-state owner check showed no measurable hot-path regression in
+the comparable non-throttled samples. Raw runs, the aggregate and the spot
+check are in `benchmarks/results/1.0.3-final/`. These WSL measurements are a
+regression gate, not a substitute for a native production-host benchmark.
+The same directory also retains the three same-period 1.0.2 comparison runs
+and their summary rather than relying on a previously recorded baseline.
+`production-edges-linux.json` and `disk-full-linux.json` retain the quantitative
+failure-mode audit and the real 16 MiB filesystem-exhaustion result used by the
+1.0.3 release gate. `orphaned-writer-wait-linux.json` records the additional
+combined fault in which a writer was already blocked before the current writer
+was finalized off-owner and its owner exited; libmdbx woke it with `PanicError`
+in 0.253 seconds rather than leaving it blocked.
+
 ## 1.0.2 final review
 
 Three unpinned release-build runs on 2026-08-30 used CPython 3.10.12, GCC

@@ -1,0 +1,1 @@
+{"close_code": null, "close_exception": null, "close_reason": null, "code": 5, "exception": "DiskError", "free_bytes": 8192, "reason": "Input/output error", "records": 64, "what": "mdbx_txn_commit"}

@@ -1,0 +1,223 @@
+{
+  "binding_version": "1.0.3",
+  "diagnostics": {
+    "archive_sha256": "dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd",
+    "binding_version": "1.0.3",
+    "build": {
+      "compiler": "GNU C/C++ 11.4.0",
+      "datetime": "\"Aug 30 2026 17:06:44\"",
+      "flags": "setuptools O3 LTO hidden-symbols",
+      "metadata": "clibmdbx-1.0.3",
+      "options": "DEBUG=0 CHECKING=0 WORDBITS=64 BYTE_ORDER=LE BIGFOOT=1 ENV_CHECKPID=1 TXN_CHECKOWNER=1 64BIT_ATOMIC=AUTO=1 64BIT_CAS=AUTO=1 TRUST_RTC=AUTO=0 AVOID_MSYNC=0 REFUND=1 MINCORE=1 PGOP_STAT=1 PROFGC=0 PGET_STAT=1 _GNU_SOURCE=YES LOCKING=AUTO=2008 OFDLOCKS=AUTO=1 FALLOCATE=AUTO=1 CACHELINE_SIZE=64 CPU_WRITEBACK_INCOHERENT=0 MMAP_INCOHERENT_CPU_CACHE=0 MMAP_INCOHERENT_FILE_WRITE=0 UNALIGNED_OK=8",
+      "target": "Linux-AMD64"
+    },
+    "libmdbx": {
+      "expected_amalgamation_commit": "251562b2dc55266d8e6d0e6627ec88ecb410702f",
+      "git_commit": "251562b2dc55266d8e6d0e6627ec88ecb410702f",
+      "git_datetime": "2026-08-09T13:18:46+03:00",
+      "git_describe": "v0.14.3-0-g251562b2",
+      "git_tree": "e4baa5caf1001120895ba9282f645236e2fb160b",
+      "major": 0,
+      "minor": 14,
+      "patch": 3,
+      "prerelease": "",
+      "tweak": 0
+    },
+    "owner_tracking": "CPython unique thread-state IDs",
+    "pid": 1778532,
+    "python_compiler": "[GCC 11.4.0]",
+    "python_version": "3.10.12 (main, Jun 22 2026, 18:55:27) [GCC 11.4.0]",
+    "release_commit": "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0",
+    "release_tag": "v0.14.3"
+  },
+  "elapsed_s": 2.418164392991457,
+  "long_reader": {
+    "commits_while_old_reader_live": 24,
+    "file_size_after_reuse": 62914560,
+    "file_size_before": 4194304,
+    "file_size_during": 62914560,
+    "gc_after": {
+      "max_reader_lag": 0,
+      "max_retained_pages": 0,
+      "pages_allocated": 14476,
+      "pages_backed": 15360,
+      "pages_gc": 13896,
+      "pages_reclaimable": 13896,
+      "pages_total": 65536
+    },
+    "gc_during": {
+      "max_reader_lag": 0,
+      "max_retained_pages": 0,
+      "pages_allocated": 14476,
+      "pages_backed": 15360,
+      "pages_gc": 13896,
+      "pages_reclaimable": 25,
+      "pages_total": 65536
+    },
+    "map_size_after_reuse": 268435456,
+    "map_size_during": 268435456,
+    "old_reader_info": {
+      "id": 4,
+      "page_gets": 2,
+      "reader_lag": 24,
+      "space_dirty": 0,
+      "space_leftover": 3620864,
+      "space_limit_hard": 268435456,
+      "space_limit_soft": 62914560,
+      "space_retired": 56815616,
+      "space_used": 2375680
+    }
+  },
+  "map_geometry": {
+    "close_latency_s": 0.00024528702488169074,
+    "disk_free_bytes": 908584022016,
+    "fixed": {
+      "autosync_threshold": 0,
+      "file_allocated": 1048576,
+      "file_size": 1048576,
+      "geometry": {
+        "current": 1048576,
+        "grow": 0,
+        "lower": 12288,
+        "shrink": 0,
+        "upper": 1048576
+      },
+      "last_pgno": 2,
+      "latter_reader_txnid": 3,
+      "map_size": 1048576,
+      "max_readers": 238,
+      "mode": 0,
+      "num_readers": 1,
+      "page_ops": {
+        "clone": 0,
+        "cow": 0,
+        "fsync": 0,
+        "merge": 0,
+        "msync": 0,
+        "newly": 239,
+        "spill": 102,
+        "split": 0,
+        "unspill": 0,
+        "write_ops": 4
+      },
+      "page_size": 4096,
+      "recent_txnid": 3,
+      "self_latter_reader_txnid": 3,
+      "system_page_size": 4096,
+      "unsynced_bytes": 417792
+    },
+    "geometry_upper_to_free_ratio": 3.6930466733883544e-05,
+    "grown": {
+      "autosync_threshold": 0,
+      "file_allocated": 7344128,
+      "file_size": 7340032,
+      "geometry": {
+        "current": 7340032,
+        "grow": 1048576,
+        "lower": 12288,
+        "shrink": 2097152,
+        "upper": 33554432
+      },
+      "last_pgno": 1635,
+      "latter_reader_txnid": 5,
+      "map_size": 33554432,
+      "max_readers": 238,
+      "mode": 0,
+      "num_readers": 1,
+      "page_ops": {
+        "clone": 0,
+        "cow": 0,
+        "fsync": 1,
+        "merge": 0,
+        "msync": 0,
+        "newly": 1633,
+        "spill": 0,
+        "split": 0,
+        "unspill": 0,
+        "write_ops": 4
+      },
+      "page_size": 4096,
+      "recent_txnid": 5,
+      "self_latter_reader_txnid": 5,
+      "system_page_size": 4096,
+      "unsynced_bytes": 0
+    },
+    "map_full": {
+      "code": -30792,
+      "reason": "MDBX_MAP_FULL: Environment mapsize limit reached",
+      "type": "MapFullError",
+      "what": "mdbx_put"
+    },
+    "online_growth": false,
+    "online_growth_error": {
+      "code": -30785,
+      "reason": "MDBX_UNABLE_EXTEND_MAPSIZE: Database engine was unable to extend mapping, e.g. since address space is unavailable or busy, or Operation system not supported such operations",
+      "type": "UnableExtendMapError",
+      "what": "mdbx_env_set_geometry"
+    },
+    "records_before_map_full": 14
+  },
+  "reader_slots": {
+    "reader_capacity": 110,
+    "readers_full": {
+      "code": -30790,
+      "reason": "MDBX_READERS_FULL: Too many readers (maxreaders reached)",
+      "type": "ReadersFullError",
+      "what": "mdbx_txn_begin"
+    },
+    "reset_handles_still_reserve_slots": true,
+    "stale_slots_cleared": 1
+  },
+  "resource_warning": {
+    "owner_thread_exit": {
+      "close_exception": {
+        "code": 0,
+        "reason": "",
+        "type": "BusyError",
+        "what": ""
+      },
+      "default_write_blocked": false,
+      "default_write_exception": {
+        "code": 0,
+        "reason": "",
+        "type": "BusyError",
+        "what": ""
+      },
+      "info_succeeded": true,
+      "new_read_exception": {
+        "code": 0,
+        "reason": "",
+        "type": "BusyError",
+        "what": ""
+      },
+      "orphaned_after_reap": 1,
+      "orphaned_before_reap": 1,
+      "reader_check_result": 0,
+      "reaped": 0,
+      "try_exception": {
+        "code": 0,
+        "reason": "",
+        "type": "BusyError",
+        "what": ""
+      },
+      "try_latency_s": 3.2554962672293186e-05,
+      "warnings": [
+        "an unfinished write transaction was finalized on a non-owner thread; native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); if that thread exits, new transactions and native environment operations fail with BusyError"
+      ]
+    },
+    "recoverable_warning": [
+      "an unfinished write transaction was finalized on a non-owner thread; native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); if that thread exits, new transactions and native environment operations fail with BusyError"
+    ],
+    "reopen_after_process_exit": true
+  },
+  "writer_wait": {
+    "busy_close_latency_s": 2.309901174157858e-05,
+    "clean_close_latency_s": 0.0002447160077281296,
+    "reader_ops": 110607,
+    "try_writer_latency_s": 0.0002465299912728369,
+    "wait_max_s": 0.2953103609615937,
+    "wait_min_s": 0.26392081601079553,
+    "waiter_count": 8,
+    "writer_under_reader_storm_s": 2.776499604806304e-05
+  }
+}

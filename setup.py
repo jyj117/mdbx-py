@@ -114,7 +114,7 @@ define_macros = [
     # details; overriding the header's supported macro keeps the dynamic symbol
     # table limited to PyInit__core and avoids collisions with other bindings.
     ("__dll_export", ""),
-    ("MDBX_BUILD_METADATA", '"clibmdbx-1.0.2"'),
+    ("MDBX_BUILD_METADATA", '"clibmdbx-1.0.3"'),
     ("MDBX_BUILD_FLAGS", '"setuptools O3 LTO hidden-symbols"'),
     ("MDBX_ENV_CHECKPID", "1"),
     ("MDBX_TXN_CHECKOWNER", "1"),
