@@ -14,6 +14,8 @@ import pytest
 
 import clibmdbx
 
+MDBX_BUSY_CODE = -30778
+
 
 def test_detached_batch_releases_gil_once(env: clibmdbx.Environment) -> None:
     keys = [f"detached-{index:06d}".encode() for index in range(50_000)]
@@ -170,8 +172,8 @@ def test_database_delete_rejects_pending_environment_operation(env: clibmdbx.Env
     thread = threading.Thread(target=waiting_writer)
     thread.start()
     assert entered.wait(timeout=2)
-    # The second writer is blocked in mdbx_txn_begin while owner holds the
-    # single-writer lock, so deleting a shared DBI must reject that operation.
+    # The second writer is blocked at the binding's root-writer gate while the
+    # owner holds the single-writer lock, so deleting a shared DBI must reject.
     time.sleep(0.05)
     with pytest.raises(clibmdbx.BusyError, match="environment operation"):
         db.drop(owner, delete=True)
@@ -264,6 +266,8 @@ def test_writer_owner_can_configure_with_open_cursor(env: clibmdbx.Environment) 
         assert cursor.put(b"configured", b"safely")
         env.set_option(clibmdbx.MDBX_opt_sync_bytes, 4096)
         env.set_flags(clibmdbx.MDBX_SAFE_NOSYNC, False)
+        env.set_geometry((-1, -1, -1, -1, -1, -1))
+        assert env.sync(force=True) in (False, True)
         assert cursor.current() == (b"configured", b"safely")
         cursor.close()
 
@@ -426,12 +430,163 @@ def test_waiting_writer_is_released_when_orphan_owner_exits(tmp_path: Path) -> N
     assert report["orphaned"] == 1
     assert report["waiter_was_waiting"] is True
     assert report["waiter_completed"] is True
-    assert report["waiter_exception"] in {"BusyError", "PanicError"}
+    assert report["waiter_exception"] == "BusyError"
     assert report["waiter_latency_s"] < 10.0
 
     reopened = clibmdbx.Environment(path)
     assert reopened.get(b"uncommitted") is None
     reopened.close()
+
+
+def test_nested_orphan_wakes_writer_and_owner_can_resume_parent(env: clibmdbx.Environment) -> None:
+    parent = env.write()
+    child = env.begin(write=True, parent=parent)
+    child.put(b"nested-orphan", b"must-rollback")
+    handoff: queue.Queue[object] = queue.Queue()
+    handoff.put(child)
+    del child
+
+    entered = threading.Event()
+    result: queue.Queue[str] = queue.Queue()
+
+    def waiter() -> None:
+        entered.set()
+        try:
+            env.write()
+        except BaseException as exc:
+            result.put(type(exc).__name__)
+        else:  # pragma: no cover - surfaced below
+            result.put("write unexpectedly succeeded")
+
+    waiting = threading.Thread(target=waiter)
+    waiting.start()
+    assert entered.wait(timeout=2)
+    time.sleep(0.05)
+    assert waiting.is_alive()
+
+    def finalizer() -> None:
+        orphan = handoff.get()
+        del orphan
+        gc.collect()
+
+    with pytest.warns(ResourceWarning, match="write transaction was finalized"):
+        finishing = threading.Thread(target=finalizer)
+        finishing.start()
+        finishing.join(timeout=5)
+        assert not finishing.is_alive()
+
+    waiting.join(timeout=5)
+    assert not waiting.is_alive()
+    assert result.get_nowait() == "BusyError"
+    assert env.orphaned_write_transactions == 1
+
+    # Reaping the nested child reacquires the root-writer gate before the
+    # fault is cleared. The owner may then safely continue or abort its parent.
+    assert env.reap_orphaned_transactions() == 1
+    assert env.orphaned_write_transactions == 0
+    parent.abort()
+    with env.write() as recovered:
+        recovered.put(b"after-nested-orphan", b"ok")
+    assert env.get(b"nested-orphan") is None
+    assert env.get(b"after-nested-orphan") == b"ok"
+
+
+@pytest.mark.parametrize(
+    ("operation", "invoke"),
+    [
+        ("sync", lambda env: env.sync(force=True)),
+        ("set_geometry", lambda env: env.set_geometry((-1, -1, -1, -1, -1, -1))),
+        ("set_flags", lambda env: env.set_flags(clibmdbx.MDBX_NOMEMINIT, True)),
+        ("set_option", lambda env: env.set_option(clibmdbx.MDBX_opt_dp_reserve_limit, 17)),
+        ("defrag", lambda env: env.defrag(time_limit=1)),
+    ],
+)
+def test_orphan_wakes_every_writer_serialized_environment_operation(
+    env: clibmdbx.Environment, operation: str, invoke
+) -> None:
+    owner = env.write()
+    owner.put(b"orphaned-management", operation.encode())
+    handoff: queue.Queue[object] = queue.Queue()
+    handoff.put(owner)
+    del owner
+
+    entered = threading.Event()
+    result: queue.Queue[tuple[str, int | None, str | None]] = queue.Queue()
+
+    def waiter() -> None:
+        entered.set()
+        try:
+            invoke(env)
+        except BaseException as exc:
+            result.put((type(exc).__name__, getattr(exc, "code", None), getattr(exc, "what", None)))
+        else:  # pragma: no cover - surfaced below
+            result.put(("operation unexpectedly succeeded", None, None))
+
+    waiting = threading.Thread(target=waiter, daemon=True)
+    waiting.start()
+    assert entered.wait(timeout=2)
+    time.sleep(0.05)
+    assert waiting.is_alive(), f"{operation} did not queue behind the active writer"
+
+    def finalizer() -> None:
+        orphan = handoff.get()
+        del orphan
+        gc.collect()
+
+    with pytest.warns(ResourceWarning, match="write transaction was finalized"):
+        finishing = threading.Thread(target=finalizer, daemon=True)
+        finishing.start()
+        finishing.join(timeout=5)
+        assert not finishing.is_alive()
+
+    waiting.join(timeout=5)
+    assert not waiting.is_alive(), f"{operation} remained blocked behind an orphaned writer"
+    exception_name, code, what = result.get_nowait()
+    assert exception_name == "BusyError"
+    assert code == MDBX_BUSY_CODE
+    assert what == "orphaned write transaction"
+    assert env.orphaned_write_transactions == 1
+
+    # This test thread created the writer and can therefore perform the only
+    # upstream-safe native abort before normal operations resume.
+    assert env.reap_orphaned_transactions() == 1
+    assert env.get(b"orphaned-management") is None
+    with env.write() as recovered:
+        recovered.put(f"after-{operation}".encode(), b"ok")
+
+
+def test_nonblocking_sync_respects_binding_writer_gate(env: clibmdbx.Environment) -> None:
+    owner = env.write()
+    try:
+        result: queue.Queue[tuple[str, int | None, str | None, float]] = queue.Queue()
+
+        def syncer() -> None:
+            started = time.perf_counter()
+            try:
+                env.sync(force=True, nonblock=True)
+            except BaseException as exc:
+                result.put(
+                    (
+                        type(exc).__name__,
+                        getattr(exc, "code", None),
+                        getattr(exc, "what", None),
+                        time.perf_counter() - started,
+                    )
+                )
+            else:  # pragma: no cover - surfaced below
+                result.put(("sync unexpectedly succeeded", None, None, time.perf_counter() - started))
+
+        thread = threading.Thread(target=syncer)
+        thread.start()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        exception_name, code, what, elapsed = result.get_nowait()
+        assert exception_name == "BusyError"
+        assert code == MDBX_BUSY_CODE
+        assert what == "mdbx_env_sync_ex"
+        assert elapsed < 1.0
+    finally:
+        owner.abort()
 
 
 @pytest.mark.fork
@@ -455,3 +610,33 @@ def test_forked_handles_are_rejected(env: clibmdbx.Environment) -> None:
     assert os.waitstatus_to_exitcode(status) == 0
     cur.close()
     txn.abort()
+
+
+@pytest.mark.fork
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="requires POSIX fork")
+def test_fork_child_never_touches_inherited_locked_writer_gate(env: clibmdbx.Environment) -> None:
+    txn = env.write()
+    txn.put(b"parent-writer", b"uncommitted")
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - separate process
+        try:
+            try:
+                env.write()
+            except clibmdbx.ForkError:
+                pass
+            else:
+                os._exit(3)
+            env.close()
+            del txn
+            gc.collect()
+            os._exit(0)
+        except BaseException:
+            os._exit(4)
+
+    _, status = os.waitpid(pid, 0)
+    assert os.waitstatus_to_exitcode(status) == 0
+    txn.abort()
+    with env.write() as recovered:
+        recovered.put(b"parent-after-fork", b"ok")
+    assert env.get(b"parent-writer") is None
+    assert env.get(b"parent-after-fork") == b"ok"

@@ -16,11 +16,17 @@ immutable.
   cleanup of already-active transactions remain available.
 - Expose `Environment.orphaned_write_transactions` for health monitoring and
   make the `ResourceWarning` state and process-restart recovery explicit.
-- Add cross-platform regression coverage that deliberately exits a write-owner
-  thread, churns replacement threads, and proves a writer already waiting in
-  libmdbx is released with a typed production fault, plus quantitative gates for
+- Add a binding-level writer gate so queued writers, sync, online
+  geometry/flag/option changes and defragmentation remain outside libmdbx and
+  are released with metadata-bearing `BusyError` on every supported platform
+  when an off-owner finalizer faults the environment. Add cross-platform regression
+  coverage that deliberately exits a write-owner thread, churns replacement
+  threads, and exercises root and nested orphan recovery, plus quantitative gates for
   writer wait/TRY behavior, busy and clean close latency, `MapFullError` recovery,
   geometry reopen, crashed-reader cleanup, long-reader lag and retained pages.
+- Make the deferred-record allocation-failure path permanently fail closed and
+  release only the binding gate, so extreme OOM cannot strand queued operations
+  or trigger an upstream-forbidden native unlock.
 - Add real filesystem-exhaustion and combined production-edge audit scripts for
   release validation. The disk-full probe verifies libmdbx's native error is
   exposed as `DiskError`, separately from the geometry-only `MapFullError`.

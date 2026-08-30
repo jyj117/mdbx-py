@@ -52,8 +52,10 @@ not retain a transaction between calls. Use an explicit read transaction and
 
 ## Concurrency and lifetime rules
 
-- An `Environment` may be shared by threads. libmdbx still permits only one
-  write transaction at a time per environment.
+- An `Environment` may be shared by threads. Open a given database path only
+  once per process and share that object; upstream libmdbx rejects a second
+  open of the same environment in one process. libmdbx permits only one write
+  transaction at a time per environment.
 - `Environment.get()` keeps the GIL on the uncontended warm-read path. While a
   writer is pending or active it yields during transaction begin, preventing
   tight reader loops from starving write progress.
@@ -74,7 +76,8 @@ not retain a transaction between calls. Use an explicit read transaction and
   rather than sharing interpreter-owned exception/type objects unsafely. Use a
   separate process when interpreter isolation is required.
 - `commit`, `sync`, `copy`, defragmentation and warm-up release the GIL once
-  around the native operation. A commit with an open cursor retains the GIL
+  around the native operation when no current-thread writer is involved. A
+  commit with an open cursor retains the GIL
   because libmdbx updates the transaction's cursor list while committing; close
   cursors first when concurrent Python progress during commit matters. Warm
   point reads keep the GIL to avoid a costly
@@ -96,10 +99,12 @@ not retain a transaction between calls. Use an explicit read transaction and
   `env.reap_orphaned_transactions()`. If that owner has exited, the environment
   is faulted: new transactions and native environment operations raise
   `BusyError` immediately. Monitor `env.orphaned_write_transactions` and
-  restart the process after draining service traffic. A writer that was already
-  waiting inside libmdbx before the fault may instead be awakened with
-  `PanicError` when the owner exits; treat both results as the same restart-only
-  production fault. Never try to abort the native writer from another thread.
+  restart the process after draining service traffic. Root writers and every
+  environment operation that can acquire MDBX's write lock (`sync`, online
+  geometry/flag/option changes and `defrag`) are queued at a binding-level gate
+  before entering libmdbx; an off-owner finalizer wakes them with `BusyError`
+  on every supported platform. Never try to abort the native writer from
+  another thread.
 - `drop(delete=True)` is rejected while an unrelated transaction may still
   reference the shared DBI. It invalidates all duplicate Python aliases after
   the native delete-and-close succeeds. Creation rolled back at any nesting

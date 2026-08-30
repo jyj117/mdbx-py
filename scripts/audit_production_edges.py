@@ -552,7 +552,7 @@ def audit_resource_warning(root: Path, script: Path) -> dict[str, object]:
     assert waiting["orphaned"] == 1
     assert waiting["waiter_was_waiting"] is True
     assert waiting["waiter_completed"] is True
-    assert waiting["waiter_exception"] in {"BusyError", "PanicError"}
+    assert waiting["waiter_exception"] == "BusyError"
     assert waiting["waiter_latency_s"] < 10.0
     reopened = clibmdbx.Environment(waiting_path)
     assert reopened.get(b"uncommitted") is None

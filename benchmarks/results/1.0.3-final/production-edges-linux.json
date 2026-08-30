@@ -5,7 +5,7 @@
     "binding_version": "1.0.3",
     "build": {
       "compiler": "GNU C/C++ 11.4.0",
-      "datetime": "\"Aug 30 2026 17:06:44\"",
+      "datetime": "\"Aug 30 2026 19:27:16\"",
       "flags": "setuptools O3 LTO hidden-symbols",
       "metadata": "clibmdbx-1.0.3",
       "options": "DEBUG=0 CHECKING=0 WORDBITS=64 BYTE_ORDER=LE BIGFOOT=1 ENV_CHECKPID=1 TXN_CHECKOWNER=1 64BIT_ATOMIC=AUTO=1 64BIT_CAS=AUTO=1 TRUST_RTC=AUTO=0 AVOID_MSYNC=0 REFUND=1 MINCORE=1 PGOP_STAT=1 PROFGC=0 PGET_STAT=1 _GNU_SOURCE=YES LOCKING=AUTO=2008 OFDLOCKS=AUTO=1 FALLOCATE=AUTO=1 CACHELINE_SIZE=64 CPU_WRITEBACK_INCOHERENT=0 MMAP_INCOHERENT_CPU_CACHE=0 MMAP_INCOHERENT_FILE_WRITE=0 UNALIGNED_OK=8",
@@ -24,13 +24,14 @@
       "tweak": 0
     },
     "owner_tracking": "CPython unique thread-state IDs",
-    "pid": 1778532,
+    "pid": 1807660,
     "python_compiler": "[GCC 11.4.0]",
     "python_version": "3.10.12 (main, Jun 22 2026, 18:55:27) [GCC 11.4.0]",
     "release_commit": "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0",
-    "release_tag": "v0.14.3"
+    "release_tag": "v0.14.3",
+    "writer_queueing": "binding-level writer-operation gate"
   },
-  "elapsed_s": 2.418164392991457,
+  "elapsed_s": 4.429755066987127,
   "long_reader": {
     "commits_while_old_reader_live": 24,
     "file_size_after_reuse": 62914560,
@@ -69,8 +70,8 @@
     }
   },
   "map_geometry": {
-    "close_latency_s": 0.00024528702488169074,
-    "disk_free_bytes": 908584022016,
+    "close_latency_s": 0.0002974980161525309,
+    "disk_free_bytes": 917159944192,
     "fixed": {
       "autosync_threshold": 0,
       "file_allocated": 1048576,
@@ -106,10 +107,10 @@
       "system_page_size": 4096,
       "unsynced_bytes": 417792
     },
-    "geometry_upper_to_free_ratio": 3.6930466733883544e-05,
+    "geometry_upper_to_free_ratio": 3.658514767515365e-05,
     "grown": {
       "autosync_threshold": 0,
-      "file_allocated": 7344128,
+      "file_allocated": 7340032,
       "file_size": 7340032,
       "geometry": {
         "current": 7340032,
@@ -178,46 +179,56 @@
       },
       "default_write_blocked": false,
       "default_write_exception": {
-        "code": 0,
-        "reason": "",
+        "code": -30778,
+        "reason": "native cleanup is restricted to the write transaction's owner thread",
         "type": "BusyError",
-        "what": ""
+        "what": "orphaned write transaction"
       },
       "info_succeeded": true,
       "new_read_exception": {
-        "code": 0,
-        "reason": "",
+        "code": -30778,
+        "reason": "native cleanup is restricted to the write transaction's owner thread",
         "type": "BusyError",
-        "what": ""
+        "what": "orphaned write transaction"
       },
       "orphaned_after_reap": 1,
       "orphaned_before_reap": 1,
       "reader_check_result": 0,
       "reaped": 0,
       "try_exception": {
-        "code": 0,
-        "reason": "",
+        "code": -30778,
+        "reason": "native cleanup is restricted to the write transaction's owner thread",
         "type": "BusyError",
-        "what": ""
+        "what": "orphaned write transaction"
       },
-      "try_latency_s": 3.2554962672293186e-05,
+      "try_latency_s": 0.0001537859789095819,
       "warnings": [
-        "an unfinished write transaction was finalized on a non-owner thread; native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); if that thread exits, new transactions and native environment operations fail with BusyError"
+        "an unfinished write transaction was finalized on a non-owner thread; native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); queued and new writers fail with BusyError; if the owner exited, restart the process"
+      ]
+    },
+    "owner_thread_exit_with_waiting_writer": {
+      "orphaned": 1,
+      "waiter_completed": true,
+      "waiter_exception": "BusyError",
+      "waiter_latency_s": 0.25750896998215467,
+      "waiter_was_waiting": true,
+      "warnings": [
+        "an unfinished write transaction was finalized on a non-owner thread; native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); queued and new writers fail with BusyError; if the owner exited, restart the process"
       ]
     },
     "recoverable_warning": [
-      "an unfinished write transaction was finalized on a non-owner thread; native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); if that thread exits, new transactions and native environment operations fail with BusyError"
+      "an unfinished write transaction was finalized on a non-owner thread; native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); queued and new writers fail with BusyError; if the owner exited, restart the process"
     ],
     "reopen_after_process_exit": true
   },
   "writer_wait": {
-    "busy_close_latency_s": 2.309901174157858e-05,
-    "clean_close_latency_s": 0.0002447160077281296,
-    "reader_ops": 110607,
-    "try_writer_latency_s": 0.0002465299912728369,
-    "wait_max_s": 0.2953103609615937,
-    "wait_min_s": 0.26392081601079553,
+    "busy_close_latency_s": 2.1220999769866467e-05,
+    "clean_close_latency_s": 0.00029551394982263446,
+    "reader_ops": 46787,
+    "try_writer_latency_s": 6.63820537738502e-05,
+    "wait_max_s": 0.3173043510178104,
+    "wait_min_s": 0.26622327201766893,
     "waiter_count": 8,
-    "writer_under_reader_storm_s": 2.776499604806304e-05
+    "writer_under_reader_storm_s": 0.00011852296302095056
   }
 }

@@ -57,9 +57,19 @@ and their summary rather than relying on a previously recorded baseline.
 `production-edges-linux.json` and `disk-full-linux.json` retain the quantitative
 failure-mode audit and the real 16 MiB filesystem-exhaustion result used by the
 1.0.3 release gate. `orphaned-writer-wait-linux.json` records the additional
-combined fault in which a writer was already blocked before the current writer
-was finalized off-owner and its owner exited; libmdbx woke it with `PanicError`
-in 0.253 seconds rather than leaving it blocked.
+combined fault in which a writer was already queued before the current writer
+was finalized off-owner and its owner exited; the binding-level gate woke it
+with `BusyError` in 0.252 seconds before it entered libmdbx.
+
+The final post-gate regression run is `writer-gate-final.json`. It reached
+446,369 warm point reads/s (P50/P95/P99 1.341/2.135/4.156 us), 1,562,470 batch
+keys/s and 1,510,873 cursor rows/s: 8.74x, 22.60x and 29.42x the pinned ctypes
+0.3.2 reference. The mixed workload completed all 10,000 writes at 2,387
+writes/s while readers sustained 577,634 reads/s; maximum RSS was 49,364 KiB.
+`Environment.get()` reached 359,885 reads/s, 1.87x its equivalent explicit
+short-transaction path. This confirms the final writer-operation gate's
+uncontended `NOWAIT` path did not regress read hot paths or mixed-write
+progress on the noisy review host; both bindings slowed in this retained run.
 
 ## 1.0.2 final review
 

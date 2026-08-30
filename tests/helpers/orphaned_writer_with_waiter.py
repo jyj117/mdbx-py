@@ -55,9 +55,9 @@ def main(path: Path) -> int:
         del txn
         gc.collect()
 
-    # The owner deliberately exits without reaping. libmdbx must wake a writer
-    # already inside its native wait with a fatal/busy result; it must not leave
-    # that Python thread blocked indefinitely.
+    # The off-owner finalizer releases the binding-level root-writer gate. The
+    # waiter must observe BusyError before entering libmdbx and must never stay
+    # blocked when the owner exits without reaping.
     owner_exit.set()
     owner_thread.join(timeout=5)
     waiting_thread.join(timeout=5)

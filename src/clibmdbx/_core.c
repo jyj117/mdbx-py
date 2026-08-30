@@ -4,6 +4,7 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include <pythread.h>
 #include <structmember.h>
 
 #ifdef Py_GIL_DISABLED
@@ -61,6 +62,7 @@ struct OrphanTxn {
   OrphanTxn *next;
   MDBX_txn *txn;
   TxnObject *parent;
+  TxnObject *gate_owner;
   uint64_t owner;
 };
 
@@ -70,12 +72,14 @@ struct EnvObject {
   PyObject *path;
   DbState *db_states;
   OrphanTxn *orphaned_txns;
+  Py_ssize_t unrecoverable_orphaned_write_txns;
   MDBX_dbi main_dbi;
   long pid;
   Py_ssize_t active_txns;
   Py_ssize_t active_write_txns;
   Py_ssize_t pending_write_begins;
   Py_ssize_t active_operations;
+  PyThread_type_lock root_writer_gate;
   uint64_t write_owner;
   int closed;
 };
@@ -93,6 +97,7 @@ struct TxnObject {
   int reset;
   int broken;
   int finished;
+  int owns_root_writer_gate;
 };
 
 struct DbObject {
@@ -293,6 +298,20 @@ static PyObject *raise_mdbx(int rc, const char *operation) {
   return NULL;
 }
 
+static int acquire_write_gate_blocking(EnvObject *env) {
+  int acquired = PyThread_acquire_lock(env->root_writer_gate, NOWAIT_LOCK);
+  if (!acquired) {
+    Py_BEGIN_ALLOW_THREADS
+    acquired = PyThread_acquire_lock(env->root_writer_gate, WAIT_LOCK);
+    Py_END_ALLOW_THREADS
+  }
+  if (!acquired) {
+    PyErr_SetString(PyExc_RuntimeError, "failed to acquire the root-writer gate");
+    return 0;
+  }
+  return 1;
+}
+
 static Py_ssize_t reap_orphaned_write_txns(EnvObject *env) {
   const uint64_t thread = current_thread();
   if (thread == 0)
@@ -305,6 +324,15 @@ static Py_ssize_t reap_orphaned_write_txns(EnvObject *env) {
     if (orphan->owner != thread) {
       link = &orphan->next;
       continue;
+    }
+    /* A nested writer does not own the root gate itself.  Its off-owner
+       finalizer releases the root's gate to wake queued writers.  Before the
+       real owner clears the fault and resumes the parent, reacquire that gate
+       so no new root writer can enter libmdbx behind the still-active parent. */
+    if (orphan->gate_owner != NULL && !orphan->gate_owner->owns_root_writer_gate) {
+      if (!acquire_write_gate_blocking(env))
+        return -1;
+      orphan->gate_owner->owns_root_writer_gate = 1;
     }
     int rc = mdbx_txn_abort(orphan->txn);
     if (rc != MDBX_SUCCESS) {
@@ -334,7 +362,7 @@ static Py_ssize_t reap_orphaned_write_txns(EnvObject *env) {
 }
 
 static Py_ssize_t count_orphaned_write_txns(const EnvObject *env) {
-  Py_ssize_t count = 0;
+  Py_ssize_t count = env->unrecoverable_orphaned_write_txns;
   for (const OrphanTxn *orphan = env->orphaned_txns; orphan != NULL; orphan = orphan->next)
     count++;
   return count;
@@ -344,11 +372,31 @@ static int reject_unreapable_write_txns(EnvObject *env) {
   const Py_ssize_t count = count_orphaned_write_txns(env);
   if (count == 0)
     return 1;
-  PyErr_Format(BusyError,
-               "environment is faulted by %zd write transaction(s) finalized on a non-owner thread; "
-               "their owner thread must call reap_orphaned_transactions(); if that owner exited, restart the "
-               "process and open a fresh Environment",
-               count);
+  PyObject *text = PyUnicode_FromFormat(
+      "environment is faulted by %zd write transaction(s) finalized on a non-owner thread; "
+      "their owner thread must call reap_orphaned_transactions(); if an orphan could not be queued during "
+      "memory exhaustion or its owner exited, restart the process and open a fresh Environment",
+      count);
+  PyObject *what = PyUnicode_FromString("orphaned write transaction");
+  PyObject *code = PyLong_FromLong(MDBX_BUSY);
+  PyObject *reason = PyUnicode_FromString("native cleanup is restricted to the write transaction's owner thread");
+  PyObject *instance = text != NULL ? PyObject_CallOneArg(BusyError, text) : NULL;
+  if (text == NULL || what == NULL || code == NULL || reason == NULL || instance == NULL ||
+      PyObject_SetAttrString(instance, "what", what) < 0 || PyObject_SetAttrString(instance, "code", code) < 0 ||
+      PyObject_SetAttrString(instance, "reason", reason) < 0) {
+    Py_XDECREF(text);
+    Py_XDECREF(what);
+    Py_XDECREF(code);
+    Py_XDECREF(reason);
+    Py_XDECREF(instance);
+    return 0;
+  }
+  PyErr_SetObject(BusyError, instance);
+  Py_DECREF(text);
+  Py_DECREF(what);
+  Py_DECREF(code);
+  Py_DECREF(reason);
+  Py_DECREF(instance);
   return 0;
 }
 
@@ -387,6 +435,75 @@ static void end_env_operation(EnvObject *self) {
     self->active_operations--;
 }
 
+static int validate_acquired_writer_gate(EnvObject *env) {
+  /* The GIL was released while a blocking caller queued.  An off-owner
+     finalizer can therefore have faulted the environment and released this
+     gate in the meantime.  Do not let the awakened caller enter libmdbx. */
+  if (env->closed || env->env == NULL) {
+    PyThread_release_lock(env->root_writer_gate);
+    PyErr_SetString(ClosedError, "environment is closed");
+    return 0;
+  }
+  if (env->pid != current_pid()) {
+    PyThread_release_lock(env->root_writer_gate);
+    PyErr_Format(ForkError,
+                 "environment was opened in PID %ld and cannot be reused in forked PID %ld; open a fresh Environment",
+                 env->pid, current_pid());
+    return 0;
+  }
+  if (!reject_unreapable_write_txns(env)) {
+    PyThread_release_lock(env->root_writer_gate);
+    return 0;
+  }
+  return 1;
+}
+
+/* Serialize every binding operation which can acquire libmdbx's native
+   single-writer lock.  This is intentionally broader than write transaction
+   creation: sync, online geometry/flag/option changes and defrag can also wait
+   for that lock.  A current writer owner bypasses the binding gate because it
+   already owns both gates; callers must then retain the GIL around libmdbx. */
+static int acquire_writer_operation_gate(EnvObject *env, int try_only, const char *operation, int *gate_acquired,
+                                         int *uses_owned_writer) {
+  const uint64_t thread = current_thread();
+  if (thread == 0)
+    return 0;
+  *gate_acquired = 0;
+  *uses_owned_writer = 0;
+  if (env->active_write_txns != 0 && env->write_owner == thread) {
+    *uses_owned_writer = 1;
+    return 1;
+  }
+
+  int acquired;
+  if (try_only) {
+    acquired = PyThread_acquire_lock(env->root_writer_gate, NOWAIT_LOCK);
+  } else {
+    if (!acquire_write_gate_blocking(env))
+      return 0;
+    acquired = 1;
+  }
+  if (!acquired) {
+    (void)raise_mdbx(MDBX_BUSY, operation);
+    return 0;
+  }
+  if (!validate_acquired_writer_gate(env))
+    return 0;
+  *gate_acquired = 1;
+  return 1;
+}
+
+static int acquire_root_writer_gate(EnvObject *env, int try_only) {
+  int gate_acquired, uses_owned_writer;
+  if (!acquire_writer_operation_gate(env, try_only, "mdbx_txn_begin", &gate_acquired, &uses_owned_writer))
+    return 0;
+  if (uses_owned_writer) {
+    (void)raise_mdbx(MDBX_BUSY, "mdbx_txn_begin (use parent= for a nested write transaction)");
+    return 0;
+  }
+  return gate_acquired;
+}
+
 static int check_txn(TxnObject *self, int require_write) {
   if (self->finished || self->txn == NULL) {
     PyErr_SetString(ClosedError, "transaction is finished");
@@ -401,6 +518,8 @@ static int check_txn(TxnObject *self, int require_write) {
     return 0;
   }
   if (!check_env(self->env))
+    return 0;
+  if (!reject_unreapable_write_txns(self->env))
     return 0;
   const uint64_t thread = current_thread();
   if (thread == 0)
@@ -799,14 +918,20 @@ static PyObject *Env_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
     self->path = NULL;
     self->db_states = NULL;
     self->orphaned_txns = NULL;
+    self->unrecoverable_orphaned_write_txns = 0;
     self->main_dbi = 0;
     self->pid = current_pid();
     self->active_txns = 0;
     self->active_write_txns = 0;
     self->pending_write_begins = 0;
     self->active_operations = 0;
+    self->root_writer_gate = PyThread_allocate_lock();
     self->write_owner = 0;
     self->closed = 1;
+    if (self->root_writer_gate == NULL) {
+      Py_DECREF(self);
+      return PyErr_NoMemory();
+    }
   }
   return (PyObject *)self;
 }
@@ -910,6 +1035,12 @@ static void Env_dealloc(EnvObject *self) {
     self->db_states = state->next;
     free_db_state(state);
   }
+  /* A post-fork child must not destroy a primitive that may be locked by a
+     vanished parent thread.  The child is already forbidden from reusing the
+     environment and the process will reclaim this tiny allocation. */
+  if (self->root_writer_gate != NULL && self->pid == current_pid())
+    PyThread_free_lock(self->root_writer_gate);
+  self->root_writer_gate = NULL;
   Py_XDECREF(self->path);
   Py_TYPE(self)->tp_free((PyObject *)self);
 }
@@ -1064,10 +1195,21 @@ static PyObject *Env_sync(EnvObject *self, PyObject *args, PyObject *kwargs) {
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
+  int gate_acquired, uses_owned_writer;
+  if (!acquire_writer_operation_gate(self, nonblock, "mdbx_env_sync_ex", &gate_acquired, &uses_owned_writer)) {
+    end_env_operation(self);
+    return NULL;
+  }
   int rc;
-  Py_BEGIN_ALLOW_THREADS
-  rc = mdbx_env_sync_ex(self->env, force != 0, nonblock != 0);
-  Py_END_ALLOW_THREADS
+  if (uses_owned_writer) {
+    rc = mdbx_env_sync_ex(self->env, force != 0, nonblock != 0);
+  } else {
+    Py_BEGIN_ALLOW_THREADS
+    rc = mdbx_env_sync_ex(self->env, force != 0, nonblock != 0);
+    Py_END_ALLOW_THREADS
+  }
+  if (gate_acquired)
+    PyThread_release_lock(self->root_writer_gate);
   end_env_operation(self);
   if (rc != MDBX_SUCCESS && rc != MDBX_RESULT_TRUE)
     return raise_mdbx(rc, "mdbx_env_sync_ex");
@@ -1144,10 +1286,21 @@ static PyObject *Env_set_geometry(EnvObject *self, PyObject *args) {
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
+  int gate_acquired, uses_owned_writer;
+  if (!acquire_writer_operation_gate(self, 0, "mdbx_env_set_geometry", &gate_acquired, &uses_owned_writer)) {
+    end_env_operation(self);
+    return NULL;
+  }
   int rc;
-  Py_BEGIN_ALLOW_THREADS
-  rc = mdbx_env_set_geometry(self->env, geo[0], geo[1], geo[2], geo[3], geo[4], geo[5]);
-  Py_END_ALLOW_THREADS
+  if (uses_owned_writer) {
+    rc = mdbx_env_set_geometry(self->env, geo[0], geo[1], geo[2], geo[3], geo[4], geo[5]);
+  } else {
+    Py_BEGIN_ALLOW_THREADS
+    rc = mdbx_env_set_geometry(self->env, geo[0], geo[1], geo[2], geo[3], geo[4], geo[5]);
+    Py_END_ALLOW_THREADS
+  }
+  if (gate_acquired)
+    PyThread_release_lock(self->root_writer_gate);
   end_env_operation(self);
   if (rc != MDBX_SUCCESS)
     return raise_mdbx(rc, "mdbx_env_set_geometry");
@@ -1175,13 +1328,13 @@ static PyObject *Env_set_flags(EnvObject *self, PyObject *args, PyObject *kwargs
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
-  int rc;
-  const uint64_t thread = current_thread();
-  if (thread == 0) {
+  int gate_acquired, uses_owned_writer;
+  if (!acquire_writer_operation_gate(self, 0, "mdbx_env_set_flags", &gate_acquired, &uses_owned_writer)) {
     end_env_operation(self);
     return NULL;
   }
-  if (self->active_write_txns != 0 && self->write_owner == thread) {
+  int rc;
+  if (uses_owned_writer) {
     /* Upstream deliberately lets a writer's owner change these settings
        without reacquiring its own lock.  Keep the GIL so a cursor finalizer
        cannot concurrently mutate that transaction's cursor list. */
@@ -1191,6 +1344,8 @@ static PyObject *Env_set_flags(EnvObject *self, PyObject *args, PyObject *kwargs
     rc = mdbx_env_set_flags(self->env, (MDBX_env_flags_t)flags, enabled != 0);
     Py_END_ALLOW_THREADS
   }
+  if (gate_acquired)
+    PyThread_release_lock(self->root_writer_gate);
   end_env_operation(self);
   if (rc != MDBX_SUCCESS)
     return raise_mdbx(rc, "mdbx_env_set_flags");
@@ -1220,19 +1375,21 @@ static PyObject *Env_set_option(EnvObject *self, PyObject *args) {
     return NULL;
   if (!begin_env_operation(self))
     return NULL;
-  int rc;
-  const uint64_t thread = current_thread();
-  if (thread == 0) {
+  int gate_acquired, uses_owned_writer;
+  if (!acquire_writer_operation_gate(self, 0, "mdbx_env_set_option", &gate_acquired, &uses_owned_writer)) {
     end_env_operation(self);
     return NULL;
   }
-  if (self->active_write_txns != 0 && self->write_owner == thread) {
+  int rc;
+  if (uses_owned_writer) {
     rc = mdbx_env_set_option(self->env, (MDBX_option_t)option, (uint64_t)value);
   } else {
     Py_BEGIN_ALLOW_THREADS
     rc = mdbx_env_set_option(self->env, (MDBX_option_t)option, (uint64_t)value);
     Py_END_ALLOW_THREADS
   }
+  if (gate_acquired)
+    PyThread_release_lock(self->root_writer_gate);
   end_env_operation(self);
   if (rc != MDBX_SUCCESS)
     return raise_mdbx(rc, "mdbx_env_set_option");
@@ -1263,14 +1420,27 @@ static PyObject *Env_defrag(EnvObject *self, PyObject *args, PyObject *kwargs) {
   }
   if (!begin_env_operation(self))
     return NULL;
+  int gate_acquired, uses_owned_writer;
+  if (!acquire_writer_operation_gate(self, 0, "mdbx_env_defrag", &gate_acquired, &uses_owned_writer)) {
+    end_env_operation(self);
+    return NULL;
+  }
   MDBX_defrag_result_t result;
   memset(&result, 0, sizeof(result));
   int rc;
-  Py_BEGIN_ALLOW_THREADS
-  rc = mdbx_env_defrag(self->env, (size_t)at_least_pages, (size_t)at_least_time, (size_t)enough_pages,
-                       (size_t)time_limit,
-                       (intptr_t)acceptable_backlash, (intptr_t)preferred_batch, NULL, NULL, &result);
-  Py_END_ALLOW_THREADS
+  if (uses_owned_writer) {
+    rc = mdbx_env_defrag(self->env, (size_t)at_least_pages, (size_t)at_least_time, (size_t)enough_pages,
+                         (size_t)time_limit, (intptr_t)acceptable_backlash, (intptr_t)preferred_batch, NULL, NULL,
+                         &result);
+  } else {
+    Py_BEGIN_ALLOW_THREADS
+    rc = mdbx_env_defrag(self->env, (size_t)at_least_pages, (size_t)at_least_time, (size_t)enough_pages,
+                         (size_t)time_limit, (intptr_t)acceptable_backlash, (intptr_t)preferred_batch, NULL, NULL,
+                         &result);
+    Py_END_ALLOW_THREADS
+  }
+  if (gate_acquired)
+    PyThread_release_lock(self->root_writer_gate);
   end_env_operation(self);
   if (rc != MDBX_SUCCESS && rc != MDBX_RESULT_TRUE)
     return raise_mdbx(rc, "mdbx_env_defrag");
@@ -1351,6 +1521,26 @@ static PyObject *Env_get_orphaned_write_transactions(EnvObject *self, void *clos
   return PyLong_FromSsize_t(count_orphaned_write_txns(self));
 }
 
+static TxnObject *root_transaction(TxnObject *txn) {
+  while (txn->parent != NULL)
+    txn = txn->parent;
+  return txn;
+}
+
+static void release_root_writer_gate(TxnObject *txn) {
+  if (txn->owns_root_writer_gate && txn->env != NULL && txn->env->root_writer_gate != NULL) {
+    txn->owns_root_writer_gate = 0;
+    /* Extension locks are not part of CPython's at-fork lock registry. Never
+       touch the parent's inherited primitive in a rejected child process. */
+    if (txn->env->pid == current_pid())
+      PyThread_release_lock(txn->env->root_writer_gate);
+  }
+}
+
+static void release_chain_root_writer_gate(TxnObject *txn) {
+  release_root_writer_gate(root_transaction(txn));
+}
+
 static void txn_finish_bookkeeping(TxnObject *self) {
   if (!self->finished) {
     self->finished = 1;
@@ -1363,6 +1553,7 @@ static void txn_finish_bookkeeping(TxnObject *self) {
     }
     if (self->parent != NULL && self->parent->active_children > 0)
       self->parent->active_children--;
+    release_root_writer_gate(self);
   }
   self->reset = 0;
 }
@@ -1379,7 +1570,8 @@ static int txn_chain_has_open_cursors(const TxnObject *txn) {
   return 0;
 }
 
-static PyObject *new_transaction(EnvObject *env, TxnObject *parent, MDBX_txn *native, int readonly) {
+static PyObject *new_transaction(EnvObject *env, TxnObject *parent, MDBX_txn *native, int readonly,
+                                 int owns_root_writer_gate) {
   const uint64_t owner = current_thread();
   if (owner == 0)
     return NULL;
@@ -1397,6 +1589,7 @@ static PyObject *new_transaction(EnvObject *env, TxnObject *parent, MDBX_txn *na
   self->reset = 0;
   self->broken = 0;
   self->finished = 0;
+  self->owns_root_writer_gate = owns_root_writer_gate;
   env->active_txns++;
   if (!readonly) {
     if (env->active_write_txns == 0)
@@ -1453,6 +1646,11 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
   self->active_operations++;
   if (root_write_begin)
     self->pending_write_begins++;
+  if (root_write_begin && !acquire_root_writer_gate(self, (txn_flags & MDBX_TXN_TRY) != 0)) {
+    self->pending_write_begins--;
+    end_env_operation(self);
+    return NULL;
+  }
   if (parent != NULL && txn_chain_has_open_cursors(parent)) {
     /* A nested begin manipulates the parent's cursor backup chain. */
     rc = mdbx_txn_begin(self->env, parent_native, txn_flags, &txn);
@@ -1464,11 +1662,16 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
   if (root_write_begin)
     self->pending_write_begins--;
   end_env_operation(self);
-  if (rc != MDBX_SUCCESS)
+  if (rc != MDBX_SUCCESS) {
+    if (root_write_begin)
+      PyThread_release_lock(self->root_writer_gate);
     return raise_mdbx(rc, "mdbx_txn_begin");
-  PyObject *result = new_transaction(self, parent, txn, !write);
+  }
+  PyObject *result = new_transaction(self, parent, txn, !write, root_write_begin);
   if (result == NULL) {
     (void)mdbx_txn_abort(txn);
+    if (root_write_begin)
+      PyThread_release_lock(self->root_writer_gate);
   } else if (!write && (flags & MDBX_NOMEMINIT)) {
     /* MDBX_TXN_RDONLY_PREPARE is MDBX_RDONLY | MDBX_NOMEMINIT.  The
        preallocated handle has the same public state as reset() and becomes
@@ -1496,24 +1699,39 @@ static PyObject *Env_write(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
   int rc;
   self->active_operations++;
   self->pending_write_begins++;
+  if (!acquire_root_writer_gate(self, 0)) {
+    self->pending_write_begins--;
+    end_env_operation(self);
+    return NULL;
+  }
   Py_BEGIN_ALLOW_THREADS
   rc = mdbx_txn_begin(self->env, NULL, MDBX_TXN_READWRITE, &txn);
   Py_END_ALLOW_THREADS
   self->pending_write_begins--;
   end_env_operation(self);
-  if (rc != MDBX_SUCCESS)
+  if (rc != MDBX_SUCCESS) {
+    PyThread_release_lock(self->root_writer_gate);
     return raise_mdbx(rc, "mdbx_txn_begin");
-  PyObject *result = new_transaction(self, NULL, txn, 0);
-  if (result == NULL)
+  }
+  PyObject *result = new_transaction(self, NULL, txn, 0, 1);
+  if (result == NULL) {
     (void)mdbx_txn_abort(txn);
+    PyThread_release_lock(self->root_writer_gate);
+  }
   return result;
 }
 
 static int defer_write_txn_to_owner(TxnObject *self) {
   OrphanTxn *orphan = PyMem_Malloc(sizeof(*orphan));
   if (orphan == NULL) {
-    /* Never attempt the upstream-forbidden cross-thread writer unlock.  In
-       the extreme OOM path retain the whole wrapper as a safe leak. */
+    /* Never attempt the upstream-forbidden cross-thread native unlock.  Mark
+       a permanent fail-closed condition, release only our unowned binding
+       gate so queued operations can observe it, and retain the whole wrapper
+       as a safe process-lifetime leak.  Without an OrphanTxn record there is
+       intentionally no in-process recovery path. */
+    (void)mdbx_txn_break(self->txn);
+    self->env->unrecoverable_orphaned_write_txns++;
+    release_chain_root_writer_gate(self);
     Py_SET_REFCNT((PyObject *)self, 1);
     PyErr_NoMemory();
     PyErr_WriteUnraisable((PyObject *)self);
@@ -1523,8 +1741,14 @@ static int defer_write_txn_to_owner(TxnObject *self) {
   orphan->txn = self->txn;
   orphan->owner = self->owner;
   orphan->parent = self->parent;
+  orphan->gate_owner = self->parent != NULL ? root_transaction(self) : NULL;
   orphan->next = self->env->orphaned_txns;
   self->env->orphaned_txns = orphan;
+  /* Python's primitive lock is deliberately unowned.  Releasing it here is
+     safe and wakes every same-Environment root writer before it can enter the
+     native libmdbx wait.  The orphan list is already visible, so the awakened
+     caller fails closed with BusyError. */
+  release_chain_root_writer_gate(self);
   self->parent = NULL;
   self->txn = NULL;
   resolve_db_state_changes(self, 0);
@@ -1532,9 +1756,9 @@ static int defer_write_txn_to_owner(TxnObject *self) {
      force until the owner thread actually aborts the native transaction. */
   Py_INCREF(self->env);
   if (PyErr_WarnEx(PyExc_ResourceWarning,
-                   "an unfinished write transaction was finalized on a non-owner thread; "
-                   "native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); "
-                   "if that thread exits, new transactions and native environment operations fail with BusyError",
+                    "an unfinished write transaction was finalized on a non-owner thread; "
+                    "native cleanup is deferred until the owner thread next uses Environment.reap_orphaned_transactions(); "
+                    "queued and new writers fail with BusyError; if the owner exited, restart the process",
                    1) < 0)
     PyErr_WriteUnraisable((PyObject *)self);
   return 1;
@@ -3500,6 +3724,7 @@ static PyObject *module_diagnostics(PyObject *module, PyObject *Py_UNUSED(ignore
       dict_set_str(dict, "archive_sha256", CLIBMDBX_ARCHIVE_SHA256) < 0 ||
       dict_set_u64(dict, "pid", (uint64_t)current_pid()) < 0 ||
       dict_set_str(dict, "owner_tracking", "CPython unique thread-state IDs") < 0 ||
+      dict_set_str(dict, "writer_queueing", "binding-level writer-operation gate") < 0 ||
       dict_set_str(dict, "python_version", Py_GetVersion()) < 0 ||
       dict_set_str(dict, "python_compiler", Py_GetCompiler()) < 0 ||
       dict_set_u64(upstream, "major", mdbx_version.major) < 0 ||

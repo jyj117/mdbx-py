@@ -7,8 +7,9 @@ background transaction manager.
 
 ## Writer ownership and bounded waits
 
-An environment has one native writer. A normal `env.write()` waits until the
-current writer finishes and releases the GIL while waiting. Do not hold a
+An environment has one native writer. Open each database path once per process
+and share that `Environment`; upstream libmdbx rejects same-process multi-open.
+A normal `env.write()` waits until the current writer finishes and releases the GIL while waiting. Do not hold a
 resource that the current writer needs while starting another writer; that is
 an application dependency cycle, not a lock libmdbx can resolve. Use
 `env.begin(write=True, flags=MDBX_TXN_TRY)` when a request must fail immediately
@@ -29,19 +30,28 @@ Treat any of the following as a production fault:
 - a `ResourceWarning` containing `write transaction was finalized`;
 - `env.orphaned_write_transactions > 0`;
 - `BusyError` saying that the environment is faulted by a write transaction
-  finalized on a non-owner thread;
-- `PanicError` returned to a writer that was already waiting inside libmdbx
-  when the abandoned owner's OS thread exited.
+  finalized on a non-owner thread.
 
 If the owner thread has exited, no remaining thread is allowed to unlock that
 writer. New transactions and native environment operations fail fast rather
-than waiting forever. A writer already waiting before the fault is detected is
-woken by libmdbx's abandoned-owner handling and may receive `PanicError`; it
-must not be retried on the same environment. Stop accepting work, let already-active read
+than waiting forever. Root writers and environment operations that may acquire
+the native write lock (`sync`, online geometry/flag/option changes and
+`defrag`) queue at a binding-level gate before they enter libmdbx; the off-owner
+finalizer releases that gate and each queued operation observes the fault as
+`BusyError`, including on Windows and macOS where the native writer lock does
+not provide Linux-style abandoned-owner wakeup. Do not
+retry on the same environment. Stop accepting work, let already-active read
 transactions finish, retain diagnostics, and restart the process. A fresh
 process/environment discards the abandoned uncommitted transaction during
 normal MDBX recovery. Never call a private C function or use a thread-ID reuse
 trick to abort it.
+
+The allocation-failure fallback is also fail-closed. If memory exhaustion
+prevents the destructor from allocating even its small deferred-cleanup record,
+`orphaned_write_transactions` still increases, the binding-only gate is
+released so waiters can fail, and the native transaction is retained without a
+cross-thread unlock. This condition cannot be reaped in-process: restart even
+if the original owner thread later runs.
 
 In production, make this normally ignored warning visible, for example:
 
@@ -172,6 +182,8 @@ python scripts/probe_disk_full.py /path/on/a/strictly-limited-filesystem
 
 The first records writer wait/TRY and close latency, map growth/reopen behavior,
 reader exhaustion and stale cleanup, long-reader retention and orphaned-writer
-fail-fast recovery as JSON. The second must be run inside a disposable quota,
+fail-fast recovery as JSON. Regression tests additionally queue every
+write-lock-taking environment management operation behind an orphan candidate.
+The second must be run inside a disposable quota,
 loopback or tmpfs/container mount and writes until the real filesystem rejects
 I/O. Never point either command at production data.

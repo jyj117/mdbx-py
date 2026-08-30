@@ -70,10 +70,13 @@ explicitly. A `ResourceWarning` identifies this misuse, and
 owner. Owner identity is scoped to a thread lifetime rather than a reusable
 numeric thread ID. If an owner exits, new transactions and native environment
 operations fail immediately with `BusyError`; discard and reopen the
-environment in a fresh process after draining traffic. A writer already waiting
-inside libmdbx when the owner exits may be awakened with `PanicError`; this is
-the same restart-only fault, not a retryable transaction error. Cross-thread
-native abort is never safe.
+environment in a fresh process after draining traffic. Root writers, `sync`,
+online geometry/flag/option changes and `defrag` wait at a binding-level gate
+and are awakened with `BusyError` before they can enter libmdbx; this is a
+restart-only fault, not a retryable transaction error. Cross-thread native
+abort is never safe. Use one shared `Environment` object for a database path in
+each process; libmdbx intentionally rejects opening the same environment twice
+within one process.
 
 No MDBX pointer is ever exposed to Python. This is deliberate: a page pointer
 can be invalidated by transaction end, cursor movement, renewal, remap, write or

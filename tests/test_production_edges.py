@@ -20,6 +20,13 @@ def test_waiting_writer_try_mode_and_close_latency_are_bounded(tmp_path: Path) -
     env = clibmdbx.Environment(path, geometry=(0, MIB, 64 * MIB, MIB, 2 * MIB, -1))
     try:
         holder = env.write()
+        same_thread_started = time.perf_counter()
+        with pytest.raises(clibmdbx.BusyError) as same_thread:
+            env.write()
+        assert time.perf_counter() - same_thread_started < 1.0
+        assert same_thread.value.code != 0
+        assert same_thread.value.what.startswith("mdbx_txn_begin")
+
         entered = threading.Event()
         result: queue.Queue[tuple[str, float]] = queue.Queue()
 
