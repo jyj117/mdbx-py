@@ -84,6 +84,95 @@ def test_hot_crud_accepts_fastcall_keywords(env: clibmdbx.Environment) -> None:
     db.close()
 
 
+def test_environment_one_shot_get(env: clibmdbx.Environment) -> None:
+    db = env.open_db(b"one-shot", create=True)
+    with env.write() as txn:
+        txn.put(b"a\x00b", b"v\x00x", db=db)
+        txn.put(b"empty", b"", db=db)
+
+    assert env.get(b"a\x00b", db) == b"v\x00x"
+    assert env.get(key=memoryview(b"empty"), db=db) == b""
+    assert env.get(b"missing", db, b"fallback") == b"fallback"
+    assert env.get(key=b"missing", db=db, default=None) is None
+    with pytest.raises(TypeError, match="multiple values"):
+        env.get(b"a\x00b", key=b"duplicate")
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        env.get(key=b"a\x00b", unknown=True)
+    with pytest.raises(TypeError, match="missing required"):
+        env.get(db=db)
+    db.close()
+
+
+def test_environment_one_shot_get_returns_safe_copy(env: clibmdbx.Environment) -> None:
+    with env.write() as txn:
+        txn.put(b"key", b"before")
+    value = env.get(b"key")
+    with env.write() as txn:
+        txn.put(b"key", b"after")
+    assert value == b"before"
+
+
+def test_environment_one_shot_get_validates_database_scope(env: clibmdbx.Environment, tmp_path: pathlib.Path) -> None:
+    other = clibmdbx.Environment(tmp_path / "other")
+    foreign = other.open_db(b"foreign", create=True)
+    try:
+        with pytest.raises(ValueError, match="different environment"):
+            env.get(b"key", foreign)
+    finally:
+        foreign.close()
+        other.close()
+
+    writer = env.write()
+    provisional = writer.open_db(b"provisional", create=True)
+    writer.put(b"key", b"value", db=provisional)
+    with pytest.raises(clibmdbx.BadTxnError, match="uncommitted"):
+        env.get(b"key", provisional)
+    writer.abort()
+    with pytest.raises(clibmdbx.ClosedError):
+        env.get(b"key", provisional)
+
+
+def test_environment_one_shot_get_releases_every_reader(env: clibmdbx.Environment) -> None:
+    with env.write() as txn:
+        txn.put(b"key", b"value")
+    for _ in range(20_000):
+        assert env.get(b"key") == b"value"
+    assert env.reader_check() == 0
+    env.close()
+    env.close()
+    with pytest.raises(clibmdbx.ClosedError):
+        env.get(b"key")
+
+
+def test_environment_one_shot_get_additional_bytes_and_default_boundaries(env: clibmdbx.Environment) -> None:
+    sentinel = object()
+    mutable_key = bytearray(b"mutable")
+    with env.write() as txn:
+        txn.put(mutable_key, b"value")
+        txn.put(b"", b"empty-key")
+
+    assert env.get(memoryview(mutable_key)) == b"value"
+    assert env.get(b"") == b"empty-key"
+    assert env.get(b"missing", default=sentinel) is sentinel
+    with pytest.raises(TypeError, match="db must be"):
+        env.get(b"key", object())
+    with pytest.raises(TypeError, match="1 to 3 positional"):
+        env.get(b"a", None, None, None)
+
+
+def test_environment_one_shot_get_dupsort_and_dropped_database(env: clibmdbx.Environment) -> None:
+    db = env.open_db(b"one-shot-dups", create=True, flags=clibmdbx.MDBX_DUPSORT)
+    with env.write() as txn:
+        txn.put(b"key", b"b", db=db)
+        txn.put(b"key", b"a", db=db)
+    assert env.get(b"key", db=db) == b"a"
+
+    with env.write() as txn:
+        db.drop(txn, delete=True)
+    with pytest.raises(clibmdbx.ClosedError):
+        env.get(b"key", db=db)
+
+
 def test_value_is_safe_copy(env: clibmdbx.Environment) -> None:
     with env.write() as txn:
         txn.put(b"key", b"before")

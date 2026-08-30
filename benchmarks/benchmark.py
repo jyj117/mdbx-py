@@ -101,6 +101,16 @@ def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) 
     try:
         original_affinity = pin_current_thread(args.cpu)
         try:
+            one_shot = timed_reads(env.get, keys, args.iterations, args.warmup)
+
+            def short_transaction_get(key: bytes) -> bytes | None:
+                short_txn = env.read()
+                try:
+                    return short_txn.get(key)
+                finally:
+                    short_txn.abort()
+
+            short_transaction = timed_reads(short_transaction_get, keys, args.iterations, args.warmup)
             txn = env.read()
             try:
                 point = timed_reads(txn.get, keys, args.iterations, args.warmup)
@@ -169,7 +179,14 @@ def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) 
             "ops_per_second": concurrent_ops * 1e9 / elapsed,
             "thread_digests": thread_digests,
         }
-        return {"point_get": point, "batch_get": batch, "cursor_scan": cursor, "concurrent_read": concurrent}
+        return {
+            "one_shot_get": one_shot,
+            "short_transaction_get": short_transaction,
+            "point_get": point,
+            "batch_get": batch,
+            "cursor_scan": cursor,
+            "concurrent_read": concurrent,
+        }
     finally:
         env.close()
 

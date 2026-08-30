@@ -35,6 +35,8 @@ def test_invalid_contiguity_and_readonly_write(env: clibmdbx.Environment, env_pa
     with env.write() as txn:
         with pytest.raises((TypeError, BufferError)):
             txn.put(memoryview(b"abcdef")[::2], b"x")
+    with pytest.raises((TypeError, BufferError)):
+        env.get(memoryview(b"abcdef")[::2])
     env.close()
     readonly = clibmdbx.Environment(env_path, readonly=True)
     try:
@@ -65,6 +67,25 @@ def test_readers_full_maps_to_specific_exception(tmp_path: pathlib.Path) -> None
         with pytest.raises(clibmdbx.ReadersFullError):
             for _ in range(1024):
                 transactions.append(env.read())
+    finally:
+        for txn in transactions:
+            txn.abort()
+        env.close()
+
+
+def test_environment_one_shot_get_propagates_readers_full(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "one-shot-readers"
+    path.mkdir()
+    env = clibmdbx.Environment(path, max_readers=1)
+    with env.write() as txn:
+        txn.put(b"key", b"value")
+    transactions = []
+    try:
+        with pytest.raises(clibmdbx.ReadersFullError):
+            for _ in range(1024):
+                transactions.append(env.read())
+        with pytest.raises(clibmdbx.ReadersFullError):
+            env.get(b"key")
     finally:
         for txn in transactions:
             txn.abort()

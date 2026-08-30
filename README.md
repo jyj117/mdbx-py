@@ -10,7 +10,7 @@ directly. The extension embeds the official libmdbx 0.14.3 amalgamation, so a
 wheel does not load a system `libmdbx` and has no runtime Python dependencies.
 It does not use ctypes, CFFI, Cython, Rust, or a helper service.
 
-> **Stable release:** 1.0.1 deliberately uses a CPython-version-specific ABI
+> **Stable release:** 1.0.2 deliberately uses a CPython-version-specific ABI
 > for maximum hot-path performance. Public API compatibility follows Semantic
 > Versioning within the 1.x line.
 
@@ -45,10 +45,18 @@ data is copied to safe `bytes`. `MDBX_RESERVE` and borrowed zero-copy views are
 not exposed because their native pointers can outlive neither the write call nor
 the mapped transaction safely.
 
+For a single warm lookup, `env.get(key, db=None, default=None)` performs the
+complete short read transaction in one C call and returns a safe copy. It does
+not retain a transaction between calls. Use an explicit read transaction and
+`get_many()` when several values must share one snapshot.
+
 ## Concurrency and lifetime rules
 
 - An `Environment` may be shared by threads. libmdbx still permits only one
   write transaction at a time per environment.
+- `Environment.get()` keeps the GIL on the uncontended warm-read path. While a
+  writer is pending or active it yields during transaction begin, preventing
+  tight reader loops from starving write progress.
 - A `Transaction` and every cursor belonging to it are bound to the thread that
   created the transaction. Cross-thread use raises `ThreadError` before calling
   libmdbx.
@@ -94,8 +102,9 @@ the binding never enables them silently.
 
 ## Major APIs
 
-- `Environment`: geometry, options, flags, sync, consistent copy, online
-  defragmentation, warm-up, reader cleanup, statistics and information.
+- `Environment`: one-shot point get, geometry, options, flags, sync, consistent
+  copy, online defragmentation, warm-up, reader cleanup, statistics and
+  information.
 - `Transaction`: read/write/nested transactions, commit timing, abort,
   reset/renew, refresh, park/unpark, canary, GC information, DB enumeration,
   CRUD, replace and batch operations.

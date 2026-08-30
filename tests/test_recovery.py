@@ -60,6 +60,7 @@ def test_large_value_roundtrip(env: clibmdbx.Environment) -> None:
         txn.put(b"large", value)
     with env.read() as txn:
         assert txn.get(b"large") == value
+    assert env.get(b"large") == value
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission semantics")
@@ -84,6 +85,7 @@ def test_readonly_permissions(tmp_path: pathlib.Path) -> None:
         try:
             with readonly.read() as txn:
                 assert txn.get(b"key") == b"value"
+            assert readonly.get(b"key") == b"value"
         finally:
             readonly.close()
     finally:

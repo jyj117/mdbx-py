@@ -35,6 +35,24 @@ def main() -> None:
                 report["results"][engine]["cursor_scan"]["ops_per_second"] for report in reports
             ),
         }
+        if all("one_shot_get" in report["results"][engine] for report in reports):
+            one_shot = [report["results"][engine]["one_shot_get"] for report in reports]
+            summary["engines"][engine]["one_shot_get_ops_per_second"] = {
+                "min": min(item["ops_per_second"] for item in one_shot),
+                "median": statistics.median(item["ops_per_second"] for item in one_shot),
+                "max": max(item["ops_per_second"] for item in one_shot),
+            }
+            summary["engines"][engine]["one_shot_get_latency_us_median_run"] = {
+                percentile: statistics.median(item["latency_us"][percentile] for item in one_shot)
+                for percentile in ("p50", "p95", "p99")
+            }
+        if all("short_transaction_get" in report["results"][engine] for report in reports):
+            short_transaction = [report["results"][engine]["short_transaction_get"] for report in reports]
+            summary["engines"][engine]["short_transaction_get_ops_per_second"] = {
+                "min": min(item["ops_per_second"] for item in short_transaction),
+                "median": statistics.median(item["ops_per_second"] for item in short_transaction),
+                "max": max(item["ops_per_second"] for item in short_transaction),
+            }
     args.output.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
 

@@ -11,18 +11,41 @@ workloads to one allowed CPU to reduce scheduler migration noise. The benchmark
 restores the original affinity before concurrent-read and mixed-read/write
 tests. Omit it when affinity control is unavailable, and record that fact.
 
-The default point test performs 100,000 warmup reads followed by 500,000 timed
-reads from one read transaction. The ctypes adapter uses `libmdbx==0.3.2`, one
-read transaction, one DBI, and `DBI.get(txn, key)`, so transaction lifetime and
-key/value data match clibmdbx. Batch results intentionally compare one native
-boundary crossing against a Python/ctypes loop.
+The default point tests perform 100,000 warmup reads followed by 500,000 timed
+reads. `one_shot_get` measures `Environment.get()`, including its fresh short
+read transaction. `short_transaction_get` measures the equivalent pre-1.0.2
+Python sequence of creating, reading, and aborting one transaction per key;
+the release gate requires `one_shot_get` to be at least 1.1x faster.
+`point_get` reuses one read transaction and is the matched
+ctypes comparison: the ctypes adapter uses `libmdbx==0.3.2`, one read
+transaction, one DBI, and `DBI.get(txn, key)`. Batch results intentionally
+compare one native boundary crossing against a Python/ctypes loop.
 
 Run at least three times after the first page-cache-warming run. Report all raw
 JSON files, CPU time, percentiles, and filesystem. MDBX maps the data file, so
 RSS includes mapped virtual pages and must not be interpreted as private heap.
 `check_performance.py` makes the hosted three-run job fail unless median point
 reads remain at least 2×, batch reads 5×, and cursor scans 5× the pinned ctypes
-reference. These are conservative regression floors, not expected performance.
+reference. It also requires one-shot throughput to remain at least 50% of the
+semantically different reused-transaction path. These are conservative
+regression floors, not expected performance.
+
+## 1.0.2 final review
+
+Three unpinned release-build runs on 2026-08-30 used CPython 3.10.12, GCC
+11.4, Linux x86_64 under WSL2, and a database on WSL's native `/tmp`
+filesystem. `Environment.get()` reached a 424,823 ops/s median with P50/P95/P99
+of 1.805/2.465/4.105 us. The equivalent explicit short-transaction path reached
+362,067 ops/s, so the new path was 1.17x faster while preserving a fresh
+snapshot per call. The reused-transaction path remained faster at 736,557
+ops/s, as expected for different snapshot semantics.
+
+Against `libmdbx==0.3.2` ctypes, the matched reused-transaction point, 100-key
+batch, and cursor medians were 9.16x, 26.25x, and 33.47x faster respectively;
+sample digests matched. Four-reader throughput ranged from 1.02 to 1.26 million
+ops/s. Mixed-write progress completed in every run, and maximum RSS remained
+within 49,416--49,592 KiB. The raw results and aggregate are in
+`benchmarks/results/1.0.2-final/`.
 
 ## Recorded final-review release-candidate result
 

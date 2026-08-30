@@ -94,7 +94,7 @@ Run the final local checks from the standalone repository root; these commands
 do not upload:
 
 ```bash
-python scripts/check_version.py 1.0.1
+python scripts/check_version.py 1.0.2
 python scripts/check_release_configuration.py
 python scripts/verify_vendor.py
 python scripts/check_api_coverage.py
@@ -108,8 +108,8 @@ After every prerequisite above is satisfied, create and push a signed annotated
 tag to the configured GitHub repository:
 
 ```bash
-git tag -s clibmdbx-v1.0.1 -m "clibmdbx 1.0.1"
-git push <github-remote> clibmdbx-v1.0.1
+git tag -s clibmdbx-v1.0.2 -m "clibmdbx 1.0.2"
+git push <github-remote> clibmdbx-v1.0.2
 ```
 
 The workflow then performs this fixed sequence:
@@ -130,7 +130,7 @@ The workflow then performs this fixed sequence:
 Install the exact reviewed stable release:
 
 ```bash
-python -m pip install --only-binary=:all: "clibmdbx==1.0.1"
+python -m pip install --only-binary=:all: "clibmdbx==1.0.2"
 ```
 
 ## Failure and rerun rules
