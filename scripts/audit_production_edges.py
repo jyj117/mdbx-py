@@ -270,21 +270,32 @@ def audit_reader_slots(root: Path, script: Path) -> dict[str, object]:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "reader-ready" in result.stdout
+    # OS lock visibility can lag child reaping. Use a bounded recovery window,
+    # preserving all live slots; reader_check must never force-clear them.
     stale = 0
-    deadline = time.monotonic() + 3
-    while stale == 0 and time.monotonic() < deadline:
-        stale += env.reader_check()
-        if stale == 0:
-            time.sleep(0.01)
-    assert stale >= 1, "reader_check did not clear the crashed process slot"
-    with env.read():
-        pass
+    recovery_started = time.monotonic()
+    deadline = recovery_started + 3
+    replacements = []
+    try:
+        while len(replacements) < capacity:
+            stale += env.reader_check()
+            try:
+                replacements.append(env.read())
+            except clibmdbx.ReadersFullError:
+                assert time.monotonic() < deadline, (len(replacements), capacity, stale)
+                time.sleep(0.01)
+        assert env.reader_check() == 0
+    finally:
+        for txn in replacements:
+            txn.abort()
     env.close()
     return {
         "reader_capacity": capacity,
         "readers_full": _exception(caught),
         "reset_handles_still_reserve_slots": isinstance(reset_caught, clibmdbx.ReadersFullError),
         "stale_slots_cleared": stale,
+        "full_reader_capacity_recovered": True,
+        "reader_recovery_seconds": time.monotonic() - recovery_started,
     }
 
 
