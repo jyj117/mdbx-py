@@ -2,9 +2,9 @@ name: clibmdbx native safety
 
 on:
   push:
-    paths: ["src/**", "vendor/**", "tests/**", "setup.py", "pyproject.toml", ".github/workflows/clibmdbx-sanitizers.yml"]
+    paths: ["src/**", "vendor/**", "tests/**", "setup.py", "pyproject.toml", ".github/workflows/**"]
   pull_request:
-    paths: ["src/**", "vendor/**", "tests/**", "setup.py", "pyproject.toml", ".github/workflows/clibmdbx-sanitizers.yml"]
+    paths: ["src/**", "vendor/**", "tests/**", "setup.py", "pyproject.toml", ".github/workflows/**"]
   workflow_dispatch:
 
 permissions:
