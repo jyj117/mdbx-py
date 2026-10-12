@@ -270,21 +270,25 @@ def audit_reader_slots(root: Path, script: Path) -> dict[str, object]:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "reader-ready" in result.stdout
-    stale = 0
-    deadline = time.monotonic() + 3
-    while stale == 0 and time.monotonic() < deadline:
-        stale += env.reader_check()
-        if stale == 0:
-            time.sleep(0.01)
-    assert stale >= 1, "reader_check did not clear the crashed process slot"
-    with env.read():
-        pass
+    # Robust reader-table lock recovery can reclaim the dead slot before
+    # reader_check's explicit counter increases. Validate the actual capacity.
+    stale = env.reader_check()
+    assert stale >= 0
+    replacements = []
+    try:
+        for _ in range(capacity):
+            replacements.append(env.read())
+        assert env.reader_check() == 0
+    finally:
+        for txn in replacements:
+            txn.abort()
     env.close()
     return {
         "reader_capacity": capacity,
         "readers_full": _exception(caught),
         "reset_handles_still_reserve_slots": isinstance(reset_caught, clibmdbx.ReadersFullError),
         "stale_slots_cleared": stale,
+        "full_reader_capacity_recovered": True,
     }
 
 
