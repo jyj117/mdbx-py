@@ -14,7 +14,9 @@ immutable.
   build workflow trigger the required ASan/UBSan and Valgrind checks.
 - Verify full reader-slot capacity after a crashed process instead of requiring
   a positive cleanup count: upstream robust-lock recovery may clean the slot
-  before the explicit reader_check counter increases.
+  before the explicit reader_check counter increases. Use a bounded recovery
+  window for OS lock visibility, test a surviving inherited OFD lock reference,
+  and document escalation rather than unsafe forced reader-slot clearing.
 
 ## 1.0.3 - 2026-08-30
 

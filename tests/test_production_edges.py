@@ -120,14 +120,20 @@ def test_map_full_recovery_preserves_atomicity_and_larger_geometry(tmp_path: Pat
         reopened.close()
 
 
-def test_reader_check_clears_reader_left_by_crashed_process(tmp_path: Path) -> None:
+@pytest.mark.parametrize("lock_reference_seconds", [0, 0.25])
+def test_reader_check_clears_reader_left_by_crashed_process(tmp_path: Path, lock_reference_seconds: float) -> None:
+    if lock_reference_seconds and sys.platform != "linux":
+        pytest.skip("Linux OFD lock-reference regression")
     path = tmp_path / "crashed-reader"
     path.mkdir()
     env = clibmdbx.Environment(path, max_readers=8)
     helper = Path(__file__).with_name("helpers") / "crashed_reader.py"
     try:
+        command = [sys.executable, str(helper), str(path)]
+        if lock_reference_seconds:
+            command.append(str(lock_reference_seconds))
         result = subprocess.run(
-            [sys.executable, str(helper), str(path)],
+            command,
             text=True,
             capture_output=True,
             timeout=10,
@@ -135,15 +141,22 @@ def test_reader_check_clears_reader_left_by_crashed_process(tmp_path: Path) -> N
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "reader-ready" in result.stdout
-        stale = env.reader_check()
-        # Upstream may reclaim the slot while recovering the reader-table lock,
-        # before the explicit check's counter is incremented. Verify capacity.
-        assert stale >= 0
-        assert env.reader_check() == 0
+        # Reaping a child is not a barrier for every OS file-lock reference.
+        # Never force-clear a slot that libmdbx still considers live. Require
+        # full capacity to return within a bounded recovery window instead.
         replacements = []
+        deadline = time.monotonic() + 3
+        stale = 0
+        capacity = env.info()["max_readers"]
         try:
-            for _ in range(env.info()["max_readers"]):
-                replacements.append(env.read())
+            while len(replacements) < capacity:
+                stale += env.reader_check()
+                try:
+                    replacements.append(env.read())
+                except clibmdbx.ReadersFullError:
+                    assert time.monotonic() < deadline, (len(replacements), capacity, stale, env.info())
+                    time.sleep(0.01)
+            assert stale >= 0
             assert env.reader_check() == 0
         finally:
             for txn in replacements:

@@ -125,6 +125,11 @@ still alive is not something to assume it can repair. It must not be used as a
 substitute for closing application transactions. Run it at startup and
 periodically when multiple processes may crash, record non-zero results, and
 alert on sustained reader-table occupancy or repeated `ReadersFullError`.
+The return count is not a recovery barrier: another libmdbx operation may have
+already reclaimed the slot, or an OS lock/file reference may still make the
+exiting process appear live. After a confirmed process exit, retry cleanup with
+a bounded deadline and verify available capacity. Escalate persistent exhaustion;
+never manually edit the lock file or clear slots belonging to live readers.
 
 ## Long readers and retained pages
 
