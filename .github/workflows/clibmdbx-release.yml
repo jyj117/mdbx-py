@@ -136,11 +136,14 @@ jobs:
 
           report = json.loads(Path("/tmp/clibmdbx-disk-full.json").read_text())
           assert report["exception"] == "DiskError", report
+          assert report["atomicity_verified"] is True, report
           assert report["code"] != 0, report
           assert report["what"], report
           assert report["reason"], report
           assert report["close_exception"] in (None, "DiskError"), report
           PY
+          bash scripts/build_mdbx_chk.sh /tmp/clibmdbx-disk-full-chk
+          /tmp/clibmdbx-disk-full-chk -q "$mountpoint/database"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

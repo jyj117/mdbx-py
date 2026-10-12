@@ -12,6 +12,7 @@
 #endif
 
 #include <stdint.h>
+#include <errno.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -22,7 +23,7 @@
 
 #include "mdbx.h"
 
-#define CLIBMDBX_VERSION "1.0.3"
+#define CLIBMDBX_VERSION "1.0.4"
 #define CLIBMDBX_RELEASE_TAG "v0.14.3"
 #define CLIBMDBX_RELEASE_COMMIT "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0"
 #define CLIBMDBX_AMALGAMATION_COMMIT "251562b2dc55266d8e6d0e6627ec88ecb410702f"
@@ -262,6 +263,18 @@ static PyObject *exception_for_code(int rc) {
   case MDBX_ENOMEM:
     return NoMemoryError;
   case MDBX_EIO:
+#ifdef _WIN32
+  case ERROR_DISK_FULL:
+  case ERROR_HANDLE_DISK_FULL:
+#ifdef ERROR_DISK_QUOTA_EXCEEDED
+  case ERROR_DISK_QUOTA_EXCEEDED:
+#endif
+#else
+  case ENOSPC:
+#ifdef EDQUOT
+  case EDQUOT:
+#endif
+#endif
     return DiskError;
   default:
     return Error;

@@ -21,6 +21,7 @@ def main() -> int:
         geometry=(0, 1 << 20, 1 << 30, 1 << 20, 2 << 20, -1),
     )
     records = 0
+    committed_records = 0
     caught: BaseException | None = None
     close_error: BaseException | None = None
     try:
@@ -29,6 +30,7 @@ def main() -> int:
                 for _ in range(4):
                     txn.put(f"{records:08d}".encode(), bytes(262_144))
                     records += 1
+            committed_records = records
     except BaseException as exc:
         caught = exc
     finally:
@@ -38,10 +40,20 @@ def main() -> int:
             close_error = exc
 
     stat = os.statvfs(os.path.dirname(root))
+    atomicity_verified = False
+    with clibmdbx.Environment(root, readonly=True) as reopened:
+        with reopened.read() as txn:
+            for index in range(committed_records):
+                assert txn.get(f"{index:08d}".encode()) == bytes(262_144)
+            for index in range(committed_records, records + 1):
+                assert txn.get(f"{index:08d}".encode()) is None
+        atomicity_verified = True
     print(
         json.dumps(
             {
                 "records": records,
+                "committed_records": committed_records,
+                "atomicity_verified": atomicity_verified,
                 "exception": type(caught).__name__ if caught else None,
                 "code": getattr(caught, "code", None),
                 "what": getattr(caught, "what", None),

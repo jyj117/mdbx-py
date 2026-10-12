@@ -3,6 +3,16 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
+## 1.0.4 - 2026-10-12
+
+- Classify POSIX ENOSPC and EDQUOT, and Windows disk-full/disk-quota errors,
+  as DiskError while preserving the original native code, operation and reason.
+  Transaction and durability semantics are unchanged.
+- Add a real ENOSPC backup regression and verify committed records and failed
+  transaction rollback after filesystem exhaustion and a read-only reopen.
+- Update the pinned cibuildwheel action to 4.2.1 and ensure changes to any
+  build workflow trigger the required ASan/UBSan and Valgrind checks.
+
 ## 1.0.3 - 2026-08-30
 
 - Replace reusable numeric OS/Python thread identifiers with CPython's unique
