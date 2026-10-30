@@ -2,6 +2,12 @@ name: clibmdbx benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      baseline-ref:
+        description: Baseline revision for the same-runner comparison
+        required: true
+        default: main
+        type: string
 
 permissions:
   contents: read
@@ -25,8 +31,32 @@ jobs:
       - run: python benchmarks/benchmark.py --cpu 0 --output benchmarks/results/ci/run3.json
       - run: python benchmarks/summarize.py benchmarks/results/ci/run*.json --output benchmarks/results/ci/summary.json
       - run: python benchmarks/check_performance.py benchmarks/results/ci/summary.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.baseline-ref }}
+          path: .benchmark-baseline
+          persist-credentials: false
+      - name: Build baseline with the same Python and compiler
+        run: |
+          python -m venv /tmp/clibmdbx-benchmark-base
+          /tmp/clibmdbx-benchmark-base/bin/python -m pip install -U pip
+          /tmp/clibmdbx-benchmark-base/bin/python -m pip install "setuptools==84.0.0" "wheel==0.48.0" "libmdbx==0.3.2"
+          /tmp/clibmdbx-benchmark-base/bin/python -m pip install ./.benchmark-baseline --no-build-isolation --no-cache-dir
+      - name: Compare AB/BA on the exact same read-only database
+        run: |
+          python benchmarks/compare_revisions.py \
+            --baseline-python /tmp/clibmdbx-benchmark-base/bin/python \
+            --candidate-python "$(command -v python)" \
+            --baseline-revision "$(git -C .benchmark-baseline rev-parse HEAD)" \
+            --candidate-revision "$(git rev-parse HEAD)" \
+            --output-dir benchmarks/results/ci/paired --cpu 0
+      - name: Apply original performance gates to the paired candidate runs
+        run: |
+          python benchmarks/summarize.py benchmarks/results/ci/paired/candidate*.json --output benchmarks/results/ci/paired/summary.json
+          python benchmarks/check_performance.py benchmarks/results/ci/paired/summary.json
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: benchmark-linux-x86-64
-          path: benchmarks/results/ci/*.json
+          path: benchmarks/results/ci/**/*.json
           retention-days: 30

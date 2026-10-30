@@ -15,6 +15,13 @@ an application dependency cycle, not a lock libmdbx can resolve. Use
 `env.begin(write=True, flags=MDBX_TXN_TRY)` when a request must fail immediately
 instead of queueing.
 
+Unreleased development code also lets public read-transaction point lookups
+(`get`, subscription and membership) yield once when a writer is waiting to
+begin, then revalidates ownership/state before acquiring any key buffer or
+mapped result. Without a queued writer these lookups keep the GIL. This
+reduces GIL wakeup starvation; it does not promise a write deadline or resolve
+an application lock cycle, and does not change CPython's switch interval.
+
 Always create, commit or abort, and release a write transaction in the same
 thread callback. Do not put a live transaction into a queue, future, async task
 or object graph whose final reference may move to another worker.
@@ -113,7 +120,14 @@ effect only for the first process opening that database/lock file; later
 processes use the existing shared table. Treat `env.info()["max_readers"]` as
 the authoritative effective capacity rather than assuming every opener can
 resize it.
+The development branch's spare-read optimization is not in published 1.0.4.
 `ReadersFullError` means no slot is available. Every read transaction must be
+accounted for, including up to one idle private `Environment.get()` spare per
+environment/process (`max_spare_txns=1`). The spare holds no snapshot/pages;
+use `max_spare_txns=0` for strict zero-idle-slot budgets. Explicit transaction
+creation, `reader_check()`, management operations (including backup) and close
+release this process's spare. Public
+transactions still must be
 ended deterministically with a context manager or `abort()`. `reset()` releases
 the MVCC snapshot but intentionally retains the transaction handle and its
 reader slot for later `renew()`; abort the handle to release the slot.

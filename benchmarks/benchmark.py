@@ -96,6 +96,49 @@ def populate(path: pathlib.Path, records: int, value_size: int) -> list[bytes]:
     return keys
 
 
+def validate_fixture(path: pathlib.Path, records: int, value_size: int) -> list[bytes]:
+    """Validate every deterministic record before reusing a read-only fixture."""
+    keys = [i.to_bytes(8, "big") for i in range(records)]
+    with clibmdbx.Environment(path, readonly=True) as env:
+        with env.read() as txn:
+            assert txn.stat()["entries"] == records, "fixture record count differs"
+            for key in keys:
+                assert txn.get(key) == hashlib.blake2b(key, digest_size=value_size).digest(), "fixture data differs"
+    return keys
+
+
+def timed_cursor(scan: Callable, records: int, repeats: int) -> dict[str, Any]:
+    # Equal work for both bindings; one short scan is too sensitive to Python
+    # allocator/GC scheduling to establish a cross-revision performance change.
+    first_start = time.perf_counter_ns()
+    warm = scan()
+    first_scan_ns = time.perf_counter_ns() - first_start
+    assert len(warm) == records
+    del warm
+    elapsed_samples = []
+    digest = hashlib.sha256()
+    for _ in range(repeats):
+        start = time.perf_counter_ns()
+        items = scan()
+        elapsed_samples.append(time.perf_counter_ns() - start)
+        assert len(items) == records
+        for key, value in items:
+            digest.update(key)
+            digest.update(value)
+        del items
+    elapsed = sum(elapsed_samples)
+    operations = records * repeats
+    return {
+        "operations": operations,
+        "seconds": elapsed / 1e9,
+        "ops_per_second": operations * 1e9 / elapsed,
+        "samples_ns": elapsed_samples,
+        "sample_digest": digest.hexdigest(),
+        "first_scan_ns": first_scan_ns,
+        "first_scan_ops_per_second": records * 1e9 / first_scan_ns,
+    }
+
+
 def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) -> dict[str, Any]:
     env = clibmdbx.Environment(path, readonly=True)
     try:
@@ -132,14 +175,7 @@ def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) 
                 }
                 cur = txn.cursor()
                 try:
-                    start = time.perf_counter_ns()
-                    items = cur.items(limit=len(keys))
-                    elapsed = time.perf_counter_ns() - start
-                    cursor = {
-                        "operations": len(items),
-                        "seconds": elapsed / 1e9,
-                        "ops_per_second": len(items) * 1e9 / elapsed,
-                    }
+                    cursor = timed_cursor(lambda: cur.items(limit=len(keys)), len(keys), args.cursor_repeats)
                 finally:
                     cur.close()
             finally:
@@ -147,7 +183,16 @@ def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) 
         finally:
             restore_current_thread_affinity(original_affinity)
 
-        barrier = threading.Barrier(args.threads + 1)
+        start = 0
+
+        def start_readers() -> None:
+            nonlocal start
+            start = time.perf_counter_ns()
+
+        # Timestamp before the barrier releases any worker. Starting after the
+        # coordinator's wait() returns omits reads completed before it gets the
+        # GIL back, and can report near-zero elapsed time for the entire batch.
+        barrier = threading.Barrier(args.threads + 1, action=start_readers)
         thread_digests: list[str] = [""] * args.threads
 
         def reader(index: int) -> None:
@@ -167,10 +212,11 @@ def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) 
         for thread in threads:
             thread.start()
         barrier.wait()
-        start = time.perf_counter_ns()
         for thread in threads:
             thread.join()
         elapsed = time.perf_counter_ns() - start
+        if not all(thread_digests):
+            raise AssertionError("a concurrent reader did not complete its workload")
         concurrent_ops = args.threads * args.concurrent_iterations
         concurrent = {
             "threads": args.threads,
@@ -220,14 +266,7 @@ def bench_ctypes(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace
                 }
                 cur = txn.cursor(db)
                 try:
-                    start = time.perf_counter_ns()
-                    items = list(cur.iter())
-                    elapsed = time.perf_counter_ns() - start
-                    cursor = {
-                        "operations": len(items),
-                        "seconds": elapsed / 1e9,
-                        "ops_per_second": len(items) * 1e9 / elapsed,
-                    }
+                    cursor = timed_cursor(lambda: list(cur.iter()), len(keys), args.cursor_repeats)
                 finally:
                     cur.close()
             finally:
@@ -243,7 +282,14 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
     keys = populate(path, args.records, args.value_size)
     env = clibmdbx.Environment(path)
     stop = threading.Event()
-    barrier = threading.Barrier(args.threads)
+    cpu_start = started = 0
+
+    def start_mixed() -> None:
+        nonlocal cpu_start, started
+        cpu_start = time.process_time_ns()
+        started = time.perf_counter_ns()
+
+    barrier = threading.Barrier(args.threads, action=start_mixed)
     reader_counts = [0] * (args.threads - 1)
 
     def reader(index: int) -> None:
@@ -263,8 +309,6 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
         thread.start()
     barrier.wait()
     write_operations = 0
-    cpu_start = time.process_time_ns()
-    started = time.perf_counter_ns()
     try:
         for batch in range(100):
             with env.write() as txn:
@@ -280,6 +324,8 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
         cpu = time.process_time_ns() - cpu_start
         env.close()
     reads = sum(reader_counts)
+    if not all(reader_counts):
+        raise AssertionError("a mixed reader did not complete its workload")
     return {
         "reader_threads": len(readers),
         "read_operations": reads,
@@ -302,12 +348,14 @@ def main() -> None:
     parser.add_argument("--warmup", type=int, default=100_000)
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--batch-iterations", type=int, default=5_000)
+    parser.add_argument("--cursor-repeats", type=int, default=9)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--concurrent-iterations", type=int, default=100_000)
     parser.add_argument("--cpu", type=int, help="pin single-thread workloads to one allowed Linux CPU")
     parser.add_argument("--skip-ctypes", action="store_true")
+    parser.add_argument("--reuse-existing", action="store_true", help="validate and read an existing synthetic fixture")
     args = parser.parse_args()
-    if min(args.records, args.value_size, args.iterations, args.batch_size, args.threads) <= 0:
+    if min(args.records, args.value_size, args.iterations, args.batch_size, args.threads, args.cursor_repeats) <= 0:
         parser.error("record, value, iteration, batch, and thread counts must be positive")
     if args.value_size > 64:
         parser.error("value-size must be <= 64 for deterministic BLAKE2 test values")
@@ -320,7 +368,11 @@ def main() -> None:
     if args.path is None:
         temporary = tempfile.TemporaryDirectory(prefix="clibmdbx-bench-", dir=os.environ.get("CLIBMDBX_BENCH_TMP"))
         args.path = pathlib.Path(temporary.name) / "db"
-    keys = populate(args.path, args.records, args.value_size)
+    keys = (
+        validate_fixture(args.path, args.records, args.value_size)
+        if args.reuse_existing
+        else populate(args.path, args.records, args.value_size)
+    )
     report: dict[str, Any] = {
         "schema": 1,
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -338,12 +390,15 @@ def main() -> None:
             report["results"]["libmdbx_ctypes_0_3_2"] = bench_ctypes(args.path, keys, args)
             native = report["results"]["clibmdbx"]
             reference = report["results"]["libmdbx_ctypes_0_3_2"]
-            for workload in ("point_get", "batch_get"):
+            for workload in ("point_get", "batch_get", "cursor_scan"):
                 if native[workload]["sample_digest"] != reference[workload]["sample_digest"]:
                     raise RuntimeError(f"{workload} compared different data across bindings")
         except (ImportError, OSError) as exc:
             report["ctypes_skipped"] = f"{type(exc).__name__}: {exc}"
-    report["results"]["clibmdbx"]["mixed_read_write"] = bench_mixed_clib(args.path.parent / "mixed-db", args)
+    # A paired comparison reuses the same read-only fixture across processes.
+    # Mixed writes must never alter it or collide with another run's database.
+    with tempfile.TemporaryDirectory(prefix="clibmdbx-mixed-", dir=args.path.parent) as mixed:
+        report["results"]["clibmdbx"]["mixed_read_write"] = bench_mixed_clib(pathlib.Path(mixed) / "db", args)
     report["rss_max_kib"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")

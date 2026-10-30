@@ -22,6 +22,8 @@ with tempfile.TemporaryDirectory(dir="/tmp") as directory:
             assert cursor.set(b"same") == (b"same", b"\0\0\0\0")
             assert cursor.count() == 1000
     db.close()
+    for _ in range(100):
+        assert env.get((42).to_bytes(4, "big")) == b"value"
     env.close()
 
 with tempfile.TemporaryDirectory(dir="/tmp") as directory:
@@ -60,4 +62,16 @@ with tempfile.TemporaryDirectory(dir="/tmp") as directory:
     assert env.reap_orphaned_transactions() == 1
     assert env.get(b"orphaned") is None
     env.close()
+with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+    spare_env = clibmdbx.Environment(directory)
+    assert spare_env.get(b"missing") is None
+    holder = [spare_env]
+    del spare_env
+    finalizer = threading.Thread(target=holder.clear)
+    finalizer.start()
+    finalizer.join(timeout=10)
+    assert not finalizer.is_alive()
+    with clibmdbx.Environment(directory) as reopened:
+        assert reopened.get(b"missing") is None
+
 gc.collect()

@@ -126,3 +126,56 @@ versus 64,472 cursor rows/s (33.24×). Both sample digests matched. This single
 run was slower than the recorded three-run median on both bindings because of
 WSL host noise; it is retained rather than substituted for the three-run
 summary.
+# Unreleased regression investigation
+
+The benchmark gate remains unchanged: one-shot/reused >= 0.50,
+one-shot/equivalent-short-transaction >= 1.10, and native/ctypes point, batch and
+cursor >= 2x/5x/5x. Unit tests reject values immediately below every threshold.
+The old main and the workflow-only PR both failed the 0.50 gate on the hosted
+runner (0.45 and 0.46). No failed result was discarded to obtain a green run.
+
+The development runtime can reuse one reset read handle, never a snapshot or
+result. Its reader-slot budget is documented in docs/API.md. The feature is
+unreleased and does not modify installed 1.0.4 wheels.
+
+The manual workflow also builds main and candidate with the same CPython,
+compiler and options and runs six alternating AB/BA pairs. Both versions read
+the exact same validated data file; its SHA-256 must remain unchanged. Results
+include raw P50/P95/P99, CPU, RSS and mixed workload records. All original gates
+are applied to candidate results, plus a separate cross-revision throughput
+guard with a disclosed 5% measurement tolerance, and an RSS guard of 10% + 1 MiB.
+These extra guards do not override any original threshold. Cursor scans use
+nine equal-work repeats for both bindings, keep every timing and verify result
+digests, rather than relying on one millisecond-scale allocation-heavy sample.
+The original first-scan timing is also retained and independently checked for
+cross-revision regression; repeated warm scans do not hide a first-scan penalty.
+The original native/ctypes cursor threshold also uses the first scan, not the
+repeated warm rate; summaries retain the repeated rate as a separate field.
+Artifacts are uploaded on failure as well as success.
+
+Mixed write/read throughput and concurrent reads also have the same 5%
+cross-revision limit, using median per-pair ratios. Mixed runs must complete
+all 10,000 writes with three readers. Two earlier six-pair runs at d42b4b6
+passed the original gates, but their combined mixed-write ratio median was
+0.919; these samples remain in Actions runs 41080250673 and 41082219010.
+That observation triggered a separate writer/GIL investigation rather than
+being discarded. Public point reads now conditionally yield only while a
+writer is waiting to begin; isolated native-stage timing separates GIL wakeup
+delay from commit I/O. No GIL switch interval or durability setting is changed
+by the performance harness or extension.
+
+Concurrent and mixed clocks start in the barrier action, before any worker
+is released. The old post-barrier coordinator timestamp could omit completed
+reads and report implausible 0.006x to 93x concurrent ratios. Run 41085183255
+exposed this bug through the added guard; it remains available, not rerun away.
+An integration test deliberately delays the coordinator after release and
+requires that the omitted interval still appears in elapsed time. Both
+revisions always use the same corrected harness.
+
+```sh
+python benchmarks/compare_revisions.py \
+  --baseline-python /path/to/base-venv/bin/python \
+  --candidate-python /path/to/candidate-venv/bin/python \
+  --baseline-revision BASE_SHA --candidate-revision HEAD_SHA \
+  --output-dir /tmp/paired --cpu 0
+```
