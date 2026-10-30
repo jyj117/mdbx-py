@@ -15,7 +15,7 @@ an application dependency cycle, not a lock libmdbx can resolve. Use
 `env.begin(write=True, flags=MDBX_TXN_TRY)` when a request must fail immediately
 instead of queueing.
 
-Unreleased development code also lets public read-transaction point lookups
+Version 1.0.5 also lets public read-transaction point lookups
 (`get`, subscription and membership) yield once when a writer is waiting to
 begin, then revalidates ownership/state before acquiring any key buffer or
 mapped result. Without a queued writer these lookups keep the GIL. This
@@ -120,7 +120,7 @@ effect only for the first process opening that database/lock file; later
 processes use the existing shared table. Treat `env.info()["max_readers"]` as
 the authoritative effective capacity rather than assuming every opener can
 resize it.
-The development branch's spare-read optimization is not in published 1.0.4.
+The spare-read optimization was added in 1.0.5; it is absent from 1.0.4.
 `ReadersFullError` means no slot is available. Every read transaction must be
 accounted for, including up to one idle private `Environment.get()` spare per
 environment/process (`max_spare_txns=1`). The spare holds no snapshot/pages;

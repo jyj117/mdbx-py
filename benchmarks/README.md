@@ -126,7 +126,7 @@ versus 64,472 cursor rows/s (33.24×). Both sample digests matched. This single
 run was slower than the recorded three-run median on both bindings because of
 WSL host noise; it is retained rather than substituted for the three-run
 summary.
-# Unreleased regression investigation
+# 1.0.5 regression investigation
 
 The benchmark gate remains unchanged: one-shot/reused >= 0.50,
 one-shot/equivalent-short-transaction >= 1.10, and native/ctypes point, batch and
@@ -134,9 +134,9 @@ cursor >= 2x/5x/5x. Unit tests reject values immediately below every threshold.
 The old main and the workflow-only PR both failed the 0.50 gate on the hosted
 runner (0.45 and 0.46). No failed result was discarded to obtain a green run.
 
-The development runtime can reuse one reset read handle, never a snapshot or
+Version 1.0.5 can reuse one reset read handle, never a snapshot or
 result. Its reader-slot budget is documented in docs/API.md. The feature is
-unreleased and does not modify installed 1.0.4 wheels.
+new in 1.0.5 and does not modify installed 1.0.4 wheels.
 
 The manual workflow also builds main and candidate with the same CPython,
 compiler and options and runs six alternating AB/BA pairs. Both versions read
