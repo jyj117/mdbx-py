@@ -164,6 +164,14 @@ writer is waiting to begin; isolated native-stage timing separates GIL wakeup
 delay from commit I/O. No GIL switch interval or durability setting is changed
 by the performance harness or extension.
 
+Concurrent and mixed clocks start in the barrier action, before any worker
+is released. The old post-barrier coordinator timestamp could omit completed
+reads and report implausible 0.006x to 93x concurrent ratios. Run 41085183255
+exposed this bug through the added guard; it remains available, not rerun away.
+An integration test deliberately delays the coordinator after release and
+requires that the omitted interval still appears in elapsed time. Both
+revisions always use the same corrected harness.
+
 ```sh
 python benchmarks/compare_revisions.py \
   --baseline-python /path/to/base-venv/bin/python \

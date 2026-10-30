@@ -5,6 +5,8 @@ import json
 import runpy
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -181,3 +183,42 @@ def test_cursor_repeats_keep_all_samples_and_validate_row_count() -> None:
     assert result["seconds"] == sum(result["samples_ns"]) / 1e9
     with pytest.raises(AssertionError):
         timed_cursor(lambda: [], 1, 9)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="benchmark runner uses Linux resource accounting")
+def test_concurrent_timer_starts_before_workers_are_released(tmp_path: Path, monkeypatch) -> None:
+    from argparse import Namespace
+
+    functions = runpy.run_path(str(ROOT / "benchmarks" / "benchmark.py"))
+    original_barrier = threading.Barrier
+    main_thread = threading.current_thread()
+
+    class DelayedCoordinatorBarrier:
+        def __init__(self, *args, **kwargs):
+            self.barrier = original_barrier(*args, **kwargs)
+
+        def wait(self):
+            result = self.barrier.wait()
+            if threading.current_thread() is main_thread:
+                # Force the coordinator to resume only after fast workers can
+                # finish: every operation still belongs inside the timer.
+                time.sleep(0.05)
+            return result
+
+    monkeypatch.setattr(threading, "Barrier", DelayedCoordinatorBarrier)
+    path = tmp_path / "timing"
+    keys = functions["populate"](path, 10, 32)
+    args = Namespace(
+        cpu=None,
+        iterations=10,
+        warmup=0,
+        batch_size=10,
+        batch_iterations=1,
+        cursor_repeats=1,
+        threads=2,
+        concurrent_iterations=1000,
+    )
+    result = functions["bench_clib"](path, keys, args)["concurrent_read"]
+    assert result["operations"] == 2000
+    assert result["seconds"] >= 0.05
+    assert all(result["thread_digests"])

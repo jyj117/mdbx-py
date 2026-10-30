@@ -16,6 +16,8 @@ immutable.
 - Let public read-transaction point lookups yield the GIL only while a writer
   is waiting to begin, then revalidate the transaction before acquiring buffers.
   Add paired mixed-read, mixed-write and concurrent-read regression guards.
+- Start concurrent/mixed benchmark clocks before releasing worker barriers;
+  preserve the original first-scan cursor gate separately from repeated scans.
 
 ## 1.0.4 - 2026-10-12
 

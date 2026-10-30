@@ -183,7 +183,16 @@ def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) 
         finally:
             restore_current_thread_affinity(original_affinity)
 
-        barrier = threading.Barrier(args.threads + 1)
+        start = 0
+
+        def start_readers() -> None:
+            nonlocal start
+            start = time.perf_counter_ns()
+
+        # Timestamp before the barrier releases any worker. Starting after the
+        # coordinator's wait() returns omits reads completed before it gets the
+        # GIL back, and can report near-zero elapsed time for the entire batch.
+        barrier = threading.Barrier(args.threads + 1, action=start_readers)
         thread_digests: list[str] = [""] * args.threads
 
         def reader(index: int) -> None:
@@ -203,10 +212,11 @@ def bench_clib(path: pathlib.Path, keys: list[bytes], args: argparse.Namespace) 
         for thread in threads:
             thread.start()
         barrier.wait()
-        start = time.perf_counter_ns()
         for thread in threads:
             thread.join()
         elapsed = time.perf_counter_ns() - start
+        if not all(thread_digests):
+            raise AssertionError("a concurrent reader did not complete its workload")
         concurrent_ops = args.threads * args.concurrent_iterations
         concurrent = {
             "threads": args.threads,
@@ -272,7 +282,14 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
     keys = populate(path, args.records, args.value_size)
     env = clibmdbx.Environment(path)
     stop = threading.Event()
-    barrier = threading.Barrier(args.threads)
+    cpu_start = started = 0
+
+    def start_mixed() -> None:
+        nonlocal cpu_start, started
+        cpu_start = time.process_time_ns()
+        started = time.perf_counter_ns()
+
+    barrier = threading.Barrier(args.threads, action=start_mixed)
     reader_counts = [0] * (args.threads - 1)
 
     def reader(index: int) -> None:
@@ -292,8 +309,6 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
         thread.start()
     barrier.wait()
     write_operations = 0
-    cpu_start = time.process_time_ns()
-    started = time.perf_counter_ns()
     try:
         for batch in range(100):
             with env.write() as txn:
@@ -309,6 +324,8 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
         cpu = time.process_time_ns() - cpu_start
         env.close()
     reads = sum(reader_counts)
+    if not all(reader_counts):
+        raise AssertionError("a mixed reader did not complete its workload")
     return {
         "reader_threads": len(readers),
         "read_operations": reads,
