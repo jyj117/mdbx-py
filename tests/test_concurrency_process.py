@@ -25,6 +25,7 @@ def test_point_read_yields_only_for_queued_writer(env: clibmdbx.Environment, loo
     holder = env.write()
     entered = threading.Event()
     observe = threading.Event()
+    observer_ready = threading.Event()
     observed = threading.Event()
     errors: queue.Queue[BaseException] = queue.Queue()
 
@@ -37,8 +38,9 @@ def test_point_read_yields_only_for_queued_writer(env: clibmdbx.Environment, loo
             errors.put(exc)
 
     def observer() -> None:
-        observe.wait(timeout=5)
-        observed.set()
+        observer_ready.set()
+        if observe.wait(timeout=5):
+            observed.set()
 
     waiting = threading.Thread(target=writer)
     watching = threading.Thread(target=observer)
@@ -47,11 +49,17 @@ def test_point_read_yields_only_for_queued_writer(env: clibmdbx.Environment, loo
     previous_interval = sys.getswitchinterval()
     try:
         assert entered.wait(timeout=2)
+        assert observer_ready.wait(timeout=2)
         time.sleep(0.05)  # writer queues behind the owner's still-live holder
         assert waiting.is_alive()
         sys.setswitchinterval(10.0)  # suppress periodic GIL handoff in this test
         observe.set()
-        for _ in range(2000):
+        # An immediate GIL release/reacquire is an opportunity, not an OS
+        # scheduling guarantee within a fixed number of fast native calls.
+        # Keep the observation window below the forced periodic switch interval
+        # so the old implementation still cannot pass by automatic handoff.
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
             if lookup == "get":
                 assert reader.get(memoryview(b"key")) == b"committed"
             elif lookup == "getitem":
