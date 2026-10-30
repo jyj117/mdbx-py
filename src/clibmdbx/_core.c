@@ -83,6 +83,9 @@ struct EnvObject {
   PyThread_type_lock root_writer_gate;
   uint64_t write_owner;
   int closed;
+  /* Keep the existing frequently-read fields at their original offsets. */
+  MDBX_txn *spare_read_txn;
+  int max_spare_txns;
 };
 
 struct TxnObject {
@@ -928,6 +931,8 @@ static PyObject *Env_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
   EnvObject *self = (EnvObject *)type->tp_alloc(type, 0);
   if (self != NULL) {
     self->env = NULL;
+    self->spare_read_txn = NULL;
+    self->max_spare_txns = 1;
     self->path = NULL;
     self->db_states = NULL;
     self->orphaned_txns = NULL;
@@ -951,7 +956,7 @@ static PyObject *Env_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) {
 
 static int Env_init(EnvObject *self, PyObject *args, PyObject *kwargs) {
   static char *kwlist[] = {"path", "flags", "mode", "max_readers", "max_dbs", "geometry", "options", "readonly",
-                           "subdir", NULL};
+                           "subdir", "max_spare_txns", NULL};
   PyObject *path;
   PyObject *flags_obj = NULL, *mode_obj = NULL, *max_readers_obj = NULL, *max_dbs_obj = NULL;
   uint32_t flags = 0;
@@ -962,9 +967,15 @@ static int Env_init(EnvObject *self, PyObject *args, PyObject *kwargs) {
   PyObject *options = Py_None;
   int readonly = 0;
   int subdir = 1;
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OOOOOOpp:Environment", kwlist, &path, &flags_obj, &mode_obj,
-                                   &max_readers_obj, &max_dbs_obj, &geometry, &options, &readonly, &subdir))
+  int max_spare_txns = 1;
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OOOOOOppi:Environment", kwlist, &path, &flags_obj, &mode_obj,
+                                   &max_readers_obj, &max_dbs_obj, &geometry, &options, &readonly, &subdir,
+                                   &max_spare_txns))
     return -1;
+  if (max_spare_txns < 0 || max_spare_txns > 1) {
+    PyErr_SetString(PyExc_ValueError, "max_spare_txns must be 0 or 1");
+    return -1;
+  }
   if ((flags_obj != NULL && !parse_uint32(flags_obj, &flags, "flags")) ||
       (mode_obj != NULL && !parse_uint32(mode_obj, &mode, "mode")) ||
       (max_readers_obj != NULL && !parse_uint32(max_readers_obj, &max_readers, "max_readers")) ||
@@ -1033,15 +1044,27 @@ static int Env_init(EnvObject *self, PyObject *args, PyObject *kwargs) {
     return -1;
   }
   self->env = env;
+  self->max_spare_txns = max_spare_txns;
   self->path = Py_NewRef(path);
   self->pid = current_pid();
   self->closed = 0;
   return 0;
 }
 
+/* Called only with the GIL and after the PID guard.  NOSTICKYTHREADS allows
+   disposal of this private, reset read handle from any Python thread. */
+static int discard_spare_read_txn(EnvObject *self) {
+  MDBX_txn *txn = self->spare_read_txn;
+  self->spare_read_txn = NULL;
+  return txn == NULL ? MDBX_SUCCESS : mdbx_txn_abort(txn);
+}
+
 static void Env_dealloc(EnvObject *self) {
-  if (self->env != NULL && self->pid == current_pid())
+  if (self->env != NULL && self->pid == current_pid()) {
+    (void)discard_spare_read_txn(self);
     (void)mdbx_env_close_ex(self->env, false);
+  }
+  self->spare_read_txn = NULL;
   self->env = NULL;
   while (self->db_states != NULL) {
     DbState *state = self->db_states;
@@ -1066,6 +1089,7 @@ static PyObject *Env_close(EnvObject *self, PyObject *args, PyObject *kwargs) {
   if (self->closed || self->env == NULL)
     Py_RETURN_NONE;
   if (self->pid != current_pid()) {
+    self->spare_read_txn = NULL;
     self->env = NULL;
     self->closed = 1;
     Py_RETURN_NONE;
@@ -1081,6 +1105,9 @@ static PyObject *Env_close(EnvObject *self, PyObject *args, PyObject *kwargs) {
                  self->active_operations);
     return NULL;
   }
+  int spare_rc = discard_spare_read_txn(self);
+  if (spare_rc != MDBX_SUCCESS)
+    return raise_mdbx(spare_rc, "mdbx_txn_abort (spare read)");
   MDBX_env *env = self->env;
   self->env = NULL;
   self->closed = 1;
@@ -1412,6 +1439,9 @@ static PyObject *Env_set_option(EnvObject *self, PyObject *args) {
 static PyObject *Env_reader_check(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
   if (!check_env(self))
     return NULL;
+  int spare_rc = discard_spare_read_txn(self);
+  if (spare_rc != MDBX_SUCCESS)
+    return raise_mdbx(spare_rc, "mdbx_txn_abort (spare read)");
   int dead = 0;
   int rc = mdbx_reader_check(self->env, &dead);
   if (rc != MDBX_SUCCESS)
@@ -1653,6 +1683,10 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
     parent_native = parent->txn;
   }
   MDBX_txn_flags_t txn_flags = (MDBX_txn_flags_t)(flags | (write ? 0u : (unsigned)MDBX_TXN_RDONLY));
+  /* An optimization must not reserve capacity ahead of an explicit transaction. */
+  int spare_rc = discard_spare_read_txn(self);
+  if (spare_rc != MDBX_SUCCESS)
+    return raise_mdbx(spare_rc, "mdbx_txn_abort (spare read)");
   MDBX_txn *txn = NULL;
   int rc;
   const int root_write_begin = write && parent == NULL;
@@ -1671,6 +1705,16 @@ static PyObject *Env_begin(EnvObject *self, PyObject *args, PyObject *kwargs) {
     Py_BEGIN_ALLOW_THREADS
     rc = mdbx_txn_begin(self->env, parent_native, txn_flags, &txn);
     Py_END_ALLOW_THREADS
+    /* Another one-shot read may have returned a spare while the GIL was
+       released. Reclaim that idle slot before reporting capacity exhaustion. */
+    if (!write && rc == MDBX_READERS_FULL && self->spare_read_txn != NULL) {
+      rc = discard_spare_read_txn(self);
+      if (rc == MDBX_SUCCESS) {
+        Py_BEGIN_ALLOW_THREADS
+        rc = mdbx_txn_begin(self->env, parent_native, txn_flags, &txn);
+        Py_END_ALLOW_THREADS
+      }
+    }
   }
   if (root_write_begin)
     self->pending_write_begins--;
@@ -1708,6 +1752,9 @@ static PyObject *Env_write(EnvObject *self, PyObject *Py_UNUSED(ignored)) {
     return NULL;
   if (!reject_unreapable_write_txns(self))
     return NULL;
+  int spare_rc = discard_spare_read_txn(self);
+  if (spare_rc != MDBX_SUCCESS)
+    return raise_mdbx(spare_rc, "mdbx_txn_abort (spare read)");
   MDBX_txn *txn = NULL;
   int rc;
   self->active_operations++;
@@ -2238,8 +2285,10 @@ static int parse_fastcall_keywords(const char *function, PyObject *const *args, 
    cannot reacquire the GIL while tight reader loops retain it, however.  While
    a writer is pending or active, release the GIL around the read begin so the
    writer gets a scheduling opportunity without penalizing the ordinary
-   uncontended path.  No native transaction escapes this call, so there is no
-   thread-affine state to retain, reset, or clean up during Environment.close(). */
+   uncontended path.  A single private NOSTICKYTHREADS handle may be retained
+   after reset: it owns no MVCC snapshot or Python object and is renewed before
+   every use. It is detached from the spare slot before any GIL release, so
+   concurrent calls can never use the same native handle. */
 static PyObject *Env_get(EnvObject *self, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
   PyObject *key_obj, *db_obj = Py_None, *default_obj = Py_None;
   if (kwnames == NULL) {
@@ -2278,23 +2327,40 @@ static PyObject *Env_get(EnvObject *self, PyObject *const *args, Py_ssize_t narg
     return NULL;
   }
 
-  MDBX_txn *txn = NULL;
+  MDBX_txn *txn = self->spare_read_txn;
+  self->spare_read_txn = NULL;
+  const int renewing = txn != NULL;
   int begin_rc;
   if (self->pending_write_begins != 0 || self->active_write_txns != 0) {
     Py_BEGIN_ALLOW_THREADS
-    begin_rc = mdbx_txn_begin(self->env, NULL, MDBX_TXN_RDONLY, &txn);
+    begin_rc = renewing ? mdbx_txn_renew(txn) : mdbx_txn_begin(self->env, NULL, MDBX_TXN_RDONLY, &txn);
     Py_END_ALLOW_THREADS
   } else {
-    begin_rc = mdbx_txn_begin(self->env, NULL, MDBX_TXN_RDONLY, &txn);
+    begin_rc = renewing ? mdbx_txn_renew(txn) : mdbx_txn_begin(self->env, NULL, MDBX_TXN_RDONLY, &txn);
   }
   int get_rc = begin_rc;
   int abort_rc = MDBX_SUCCESS;
+  const char *finish_what = "mdbx_txn_abort (Environment.get)";
   PyObject *result = NULL;
   if (begin_rc == MDBX_SUCCESS) {
     get_rc = mdbx_get(txn, dbi, &key, &data);
     if (get_rc == MDBX_SUCCESS)
       result = val_to_bytes(&data);
-    abort_rc = mdbx_txn_abort(txn);
+    if (self->max_spare_txns && self->spare_read_txn == NULL && self->active_operations == 1 && self->active_txns == 0 &&
+        self->pending_write_begins == 0 && !PyErr_Occurred() &&
+        (get_rc == MDBX_SUCCESS || get_rc == MDBX_NOTFOUND)) {
+      abort_rc = mdbx_txn_reset(txn);
+      if (abort_rc == MDBX_SUCCESS) {
+        self->spare_read_txn = txn;
+      } else {
+        finish_what = "mdbx_txn_reset (Environment.get)";
+        (void)mdbx_txn_abort(txn);
+      }
+    } else {
+      abort_rc = mdbx_txn_abort(txn);
+    }
+  } else if (renewing) {
+    (void)mdbx_txn_abort(txn);
   }
   PyBuffer_Release(&key_view);
   end_env_operation(self);
@@ -2304,12 +2370,12 @@ static PyObject *Env_get(EnvObject *self, PyObject *const *args, Py_ssize_t narg
     return NULL;
   }
   if (begin_rc != MDBX_SUCCESS)
-    return raise_mdbx(begin_rc, "mdbx_txn_begin (Environment.get)");
+    return raise_mdbx(begin_rc, renewing ? "mdbx_txn_renew (Environment.get)" : "mdbx_txn_begin (Environment.get)");
   if (get_rc != MDBX_SUCCESS && get_rc != MDBX_NOTFOUND)
     return raise_mdbx(get_rc, "mdbx_get (Environment.get)");
   if (abort_rc != MDBX_SUCCESS) {
     Py_XDECREF(result);
-    return raise_mdbx(abort_rc, "mdbx_txn_abort (Environment.get)");
+    return raise_mdbx(abort_rc, finish_what);
   }
   if (get_rc == MDBX_NOTFOUND)
     return Py_NewRef(default_obj);

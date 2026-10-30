@@ -113,7 +113,13 @@ effect only for the first process opening that database/lock file; later
 processes use the existing shared table. Treat `env.info()["max_readers"]` as
 the authoritative effective capacity rather than assuming every opener can
 resize it.
+The development branch's spare-read optimization is not in published 1.0.4.
 `ReadersFullError` means no slot is available. Every read transaction must be
+accounted for, including up to one idle private `Environment.get()` spare per
+environment/process (`max_spare_txns=1`). The spare holds no snapshot/pages;
+use `max_spare_txns=0` for strict zero-idle-slot budgets. Explicit transaction
+creation, `reader_check()` and close release this process's spare. Public
+transactions still must be
 ended deterministically with a context manager or `abort()`. `reset()` releases
 the MVCC snapshot but intentionally retains the transaction handle and its
 reader slot for later `renew()`; abort the handle to release the slot.

@@ -1,7 +1,10 @@
 # Python API and semantics
 
+This describes the development branch. The `max_spare_txns` option and private
+read-handle reuse are unreleased; published 1.0.4 uses allocate/abort per call.
+
 `Environment(path, *, flags=0, mode=0o664, max_readers=126, max_dbs=64,
-geometry=None, options=None, readonly=False, subdir=True)` opens immediately.
+geometry=None, options=None, readonly=False, subdir=True, max_spare_txns=1)` opens immediately.
 `geometry` is a six-item `(lower, now, upper, grow, shrink, page_size)` sequence;
 use `-1` for unchanged values. `options` maps exported `MDBX_opt_*` constants to
 integer values.
@@ -15,10 +18,22 @@ inactive preallocated read handle; call `renew()` before use. A contradictory
 upstream-supported nested write transaction; the parent is blocked until the
 child finishes.
 
-`env.get(key, db=None, default=None)` is the one-shot point-read path. It begins
-a fresh read transaction, performs `mdbx_get`, copies the value, and aborts the
-transaction before returning, all inside one C call. No `Transaction` object or
-reader slot survives the call. The DBI must already be committed. Use an
+`env.get(key, db=None, default=None)` is the one-shot point-read path. It obtains
+a fresh read snapshot, performs `mdbx_get`, copies the value, and ends the
+snapshot before returning, all inside one C call. No Python `Transaction` or
+active snapshot survives the call. By default the environment may keep one
+private reset native handle for `mdbx_txn_renew()`, saving allocation and reader
+table locking. The handle is bounded per environment, not per thread, and is
+never concurrently borrowed. It retains one reader slot, but no old pages.
+Explicit transaction creation, `reader_check()` and close discard the spare;
+it is not retained while public transactions or pending writers exist. The
+binding always opens with upstream `MDBX_NOSTICKYTHREADS`, so sequential use of
+this private reset handle on different threads is permitted. Public transaction
+and cursor thread-affinity rules do not change. `max_spare_txns=0` disables
+reuse and retains the original allocate/abort behavior. Only 0 and 1 are
+accepted. Budget up to one idle reader slot per environment/process when
+several processes share a database, or disable the spare for tight reader
+budgets. This is not a result cache. The DBI must already be committed. Use an
 explicit transaction for multi-key or multi-DBI snapshot consistency.
 The warm uncontended path retains the GIL; when a writer is pending or active,
 the read begin temporarily releases it so sustained reader loops cannot starve

@@ -3,6 +3,16 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
+## Unreleased
+
+- Reuse at most one reset native read handle for `Environment.get()`, using
+  official reset/renew APIs and a fresh snapshot for every call. No old pages
+  or values are cached. `max_spare_txns=0` restores allocate/abort behavior.
+  Explicit transaction creation, reader maintenance and close release the
+  spare; the default may reserve one idle reader slot per environment/process.
+- Keep all existing performance thresholds; compare base and candidate on the
+  same runner and preserve benchmark evidence even when a performance check fails.
+
 ## 1.0.4 - 2026-10-12
 
 - Classify POSIX ENOSPC and EDQUOT, and Windows disk-full/disk-quota errors,

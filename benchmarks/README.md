@@ -126,3 +126,33 @@ versus 64,472 cursor rows/s (33.24×). Both sample digests matched. This single
 run was slower than the recorded three-run median on both bindings because of
 WSL host noise; it is retained rather than substituted for the three-run
 summary.
+# Unreleased regression investigation
+
+The benchmark gate remains unchanged: one-shot/reused >= 0.50,
+one-shot/equivalent-short-transaction >= 1.10, and native/ctypes point, batch and
+cursor >= 2x/5x/5x. Unit tests reject values immediately below every threshold.
+The old main and the workflow-only PR both failed the 0.50 gate on the hosted
+runner (0.45 and 0.46). No failed result was discarded to obtain a green run.
+
+The development runtime can reuse one reset read handle, never a snapshot or
+result. Its reader-slot budget is documented in docs/API.md. The feature is
+unreleased and does not modify installed 1.0.4 wheels.
+
+The manual workflow also builds main and candidate with the same CPython,
+compiler and options and runs four alternating AB/BA pairs. Both versions read
+the exact same validated data file; its SHA-256 must remain unchanged. Results
+include raw P50/P95/P99, CPU, RSS and mixed workload records. All original gates
+are applied to candidate results, plus a separate cross-revision throughput
+guard with a disclosed 5% measurement tolerance, and an RSS guard of 10% + 1 MiB.
+These extra guards do not override any original threshold. Cursor scans use
+nine equal-work repeats for both bindings, keep every timing and verify result
+digests, rather than relying on one millisecond-scale allocation-heavy sample.
+Artifacts are uploaded on failure as well as success.
+
+```sh
+python benchmarks/compare_revisions.py \
+  --baseline-python /path/to/base-venv/bin/python \
+  --candidate-python /path/to/candidate-venv/bin/python \
+  --baseline-revision BASE_SHA --candidate-revision HEAD_SHA \
+  --output-dir /tmp/paired --cpu 0
+```

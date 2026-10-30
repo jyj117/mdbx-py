@@ -146,6 +146,7 @@ class Environment:
         options: Mapping[int, int] | None = ...,
         readonly: bool = ...,
         subdir: bool = ...,
+        max_spare_txns: int = ...,
     ) -> None: ...
     @property
     def closed(self) -> bool: ...
