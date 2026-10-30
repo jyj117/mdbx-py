@@ -149,6 +149,8 @@ nine equal-work repeats for both bindings, keep every timing and verify result
 digests, rather than relying on one millisecond-scale allocation-heavy sample.
 The original first-scan timing is also retained and independently checked for
 cross-revision regression; repeated warm scans do not hide a first-scan penalty.
+The original native/ctypes cursor threshold also uses the first scan, not the
+repeated warm rate; summaries retain the repeated rate as a separate field.
 Artifacts are uploaded on failure as well as success.
 
 Mixed write/read throughput and concurrent reads also have the same 5%

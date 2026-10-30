@@ -68,6 +68,37 @@ def test_original_lifecycle_threshold_accepts_exact_boundary(tmp_path: Path) -> 
     assert "one-shot/reused=0.50x" in result.stdout
 
 
+@pytest.mark.parametrize("first_rate,exit_code", [(400, 1), (500, 0)])
+def test_original_cursor_gate_uses_first_scan_even_when_repeats_are_fast(
+    tmp_path: Path, first_rate: int, exit_code: int
+) -> None:
+    engines = {}
+    for name, point, batch, cursor, first in [
+        ("clibmdbx", 400, 1000, 1000, first_rate),
+        ("libmdbx_ctypes_0_3_2", 100, 100, 100, 100),
+    ]:
+        engines[name] = {
+            "point_get": dict(ops_per_second=point, latency_us=dict(p50=1, p95=2, p99=3)),
+            "batch_get": dict(ops_per_second=batch),
+            "cursor_scan": dict(ops_per_second=cursor, first_scan_ops_per_second=first),
+        }
+    engines["clibmdbx"]["one_shot_get"] = dict(ops_per_second=250, latency_us=dict(p50=1, p95=2, p99=3))
+    engines["clibmdbx"]["short_transaction_get"] = dict(ops_per_second=200)
+    raw = tmp_path / "raw.json"
+    raw.write_text(json.dumps({"results": engines}))
+    aggregate = tmp_path / "summary.json"
+    subprocess.run(
+        [sys.executable, str(ROOT / "benchmarks" / "summarize.py"), str(raw), "--output", str(aggregate)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    result = subprocess.run([sys.executable, str(CHECK), str(aggregate)], capture_output=True, text=True)
+    assert result.returncode == exit_code, result.stderr
+    if exit_code:
+        assert "cursor" in result.stderr
+
+
 def report() -> dict:
     data = {
         "platform": dict(python="3.10", machine="x86_64", platform="Linux"),

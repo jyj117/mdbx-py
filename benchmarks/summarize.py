@@ -32,6 +32,12 @@ def main() -> None:
                 report["results"][engine]["batch_get"]["ops_per_second"] for report in reports
             ),
             "cursor_scan_ops_per_second_median": statistics.median(
+                report["results"][engine]["cursor_scan"].get(
+                    "first_scan_ops_per_second", report["results"][engine]["cursor_scan"]["ops_per_second"]
+                )
+                for report in reports
+            ),
+            "cursor_scan_repeated_ops_per_second_median": statistics.median(
                 report["results"][engine]["cursor_scan"]["ops_per_second"] for report in reports
             ),
         }
