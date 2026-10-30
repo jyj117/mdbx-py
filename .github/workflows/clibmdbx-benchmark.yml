@@ -25,7 +25,7 @@ jobs:
       - run: python benchmarks/benchmark.py --cpu 0 --output benchmarks/results/ci/run3.json
       - run: python benchmarks/summarize.py benchmarks/results/ci/run*.json --output benchmarks/results/ci/summary.json
       - run: python benchmarks/check_performance.py benchmarks/results/ci/summary.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: benchmark-linux-x86-64
           path: benchmarks/results/ci/*.json
