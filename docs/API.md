@@ -25,7 +25,8 @@ active snapshot survives the call. By default the environment may keep one
 private reset native handle for `mdbx_txn_renew()`, saving allocation and reader
 table locking. The handle is bounded per environment, not per thread, and is
 never concurrently borrowed. It retains one reader slot, but no old pages.
-Explicit transaction creation, `reader_check()` and close discard the spare;
+Explicit transaction creation, reader maintenance, management operations
+(including backup) and close discard the spare;
 it is not retained while public transactions or pending writers exist. The
 binding always opens with upstream `MDBX_NOSTICKYTHREADS`, so sequential use of
 this private reset handle on different threads is permitted. Public transaction

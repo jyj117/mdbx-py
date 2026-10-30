@@ -118,7 +118,8 @@ The development branch's spare-read optimization is not in published 1.0.4.
 accounted for, including up to one idle private `Environment.get()` spare per
 environment/process (`max_spare_txns=1`). The spare holds no snapshot/pages;
 use `max_spare_txns=0` for strict zero-idle-slot budgets. Explicit transaction
-creation, `reader_check()` and close release this process's spare. Public
+creation, `reader_check()`, management operations (including backup) and close
+release this process's spare. Public
 transactions still must be
 ended deterministically with a context manager or `abort()`. `reset()` releases
 the MVCC snapshot but intentionally retains the transaction handle and its

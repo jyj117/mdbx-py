@@ -61,6 +61,29 @@ def test_spare_renews_external_commits_without_retaining_old_pages(tmp_path: Pat
         assert before == b"before"
 
 
+def test_management_copy_reclaims_idle_slot_under_other_process_pressure(tmp_path: Path) -> None:
+    path = tmp_path / "db"
+    with clibmdbx.Environment(path, max_readers=8) as env:
+        assert env.get(b"missing") is None
+        holder = subprocess.Popen(
+            [sys.executable, str(HELPER), str(path), "hold"],
+            text=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            ready = json.loads(holder.stdout.readline())
+            assert ready["capacity"] == env.info()["max_readers"] - 1
+            backup = tmp_path / "backup"
+            env.copy(backup)
+            with clibmdbx.Environment(backup, readonly=True) as copied:
+                assert copied.get(b"missing") is None
+        finally:
+            _, error = holder.communicate("release\n", timeout=15)
+            assert holder.returncode == 0, error
+
+
 @pytest.mark.parametrize("value", [-1, 2])
 def test_invalid_spare_limit(tmp_path: Path, value: int) -> None:
     with pytest.raises(ValueError, match="0 or 1"):

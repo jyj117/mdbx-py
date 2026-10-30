@@ -432,7 +432,9 @@ static int check_env(EnvObject *self) {
   return 1;
 }
 
-static int begin_env_operation(EnvObject *self) {
+static int discard_spare_read_txn(EnvObject *self);
+
+static int start_env_operation(EnvObject *self, int preserve_spare) {
   if (!check_env(self))
     return 0;
   /* An orphaned native writer whose owner is gone still owns libmdbx's
@@ -442,8 +444,19 @@ static int begin_env_operation(EnvObject *self) {
      available. */
   if (!reject_unreapable_write_txns(self))
     return 0;
+  if (!preserve_spare) {
+    int rc = discard_spare_read_txn(self);
+    if (rc != MDBX_SUCCESS) {
+      (void)raise_mdbx(rc, "mdbx_txn_abort (spare read)");
+      return 0;
+    }
+  }
   self->active_operations++;
   return 1;
+}
+
+static int begin_env_operation(EnvObject *self) {
+  return start_env_operation(self, 0);
 }
 
 static void end_env_operation(EnvObject *self) {
@@ -2313,7 +2326,7 @@ static PyObject *Env_get(EnvObject *self, PyObject *const *args, Py_ssize_t narg
       default_obj = values[2];
   }
 
-  if (!begin_env_operation(self))
+  if (!start_env_operation(self, 1))
     return NULL;
   MDBX_dbi dbi;
   if (optional_db_for_env(self, NULL, db_obj, &dbi) == (DbObject *)-1) {

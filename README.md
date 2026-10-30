@@ -50,7 +50,8 @@ complete short read transaction in one C call and returns a safe copy. It does
 not retain an active snapshot between calls. A bounded private reset handle
 avoids repeated allocation; `max_spare_txns=0` disables it. With the default
 `max_spare_txns=1`, budget one idle reader slot per environment/process; explicit
-transactions, `reader_check()` and close release that spare. Use an explicit read transaction and
+transactions, `reader_check()`, management operations and close release that
+spare. Use an explicit read transaction and
 `get_many()` when several values must share one snapshot.
 
 The reset-handle optimization and `max_spare_txns` option above are **unreleased
