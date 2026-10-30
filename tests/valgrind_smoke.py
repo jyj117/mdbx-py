@@ -63,10 +63,10 @@ with tempfile.TemporaryDirectory(dir="/tmp") as directory:
     assert env.get(b"orphaned") is None
     env.close()
 with tempfile.TemporaryDirectory(dir="/tmp") as directory:
-    env = clibmdbx.Environment(directory)
-    assert env.get(b"missing") is None
-    holder = [env]
-    del env
+    spare_env = clibmdbx.Environment(directory)
+    assert spare_env.get(b"missing") is None
+    holder = [spare_env]
+    del spare_env
     finalizer = threading.Thread(target=holder.clear)
     finalizer.start()
     finalizer.join(timeout=10)

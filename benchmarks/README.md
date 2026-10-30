@@ -139,7 +139,7 @@ result. Its reader-slot budget is documented in docs/API.md. The feature is
 unreleased and does not modify installed 1.0.4 wheels.
 
 The manual workflow also builds main and candidate with the same CPython,
-compiler and options and runs four alternating AB/BA pairs. Both versions read
+compiler and options and runs six alternating AB/BA pairs. Both versions read
 the exact same validated data file; its SHA-256 must remain unchanged. Results
 include raw P50/P95/P99, CPU, RSS and mixed workload records. All original gates
 are applied to candidate results, plus a separate cross-revision throughput
@@ -147,6 +147,8 @@ guard with a disclosed 5% measurement tolerance, and an RSS guard of 10% + 1 MiB
 These extra guards do not override any original threshold. Cursor scans use
 nine equal-work repeats for both bindings, keep every timing and verify result
 digests, rather than relying on one millisecond-scale allocation-heavy sample.
+The original first-scan timing is also retained and independently checked for
+cross-revision regression; repeated warm scans do not hide a first-scan penalty.
 Artifacts are uploaded on failure as well as success.
 
 ```sh

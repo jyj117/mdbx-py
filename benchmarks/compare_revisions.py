@@ -44,6 +44,13 @@ def check_regression(baseline: list[dict], candidate: list[dict]) -> dict:
         old = statistics.median(r["results"]["clibmdbx"][workload]["ops_per_second"] for r in baseline)
         new = statistics.median(r["results"]["clibmdbx"][workload]["ops_per_second"] for r in candidate)
         ratios[workload] = new / old
+    old_first = statistics.median(
+        r["results"]["clibmdbx"]["cursor_scan"]["first_scan_ops_per_second"] for r in baseline
+    )
+    new_first = statistics.median(
+        r["results"]["clibmdbx"]["cursor_scan"]["first_scan_ops_per_second"] for r in candidate
+    )
+    ratios["cursor_first_scan"] = new_first / old_first
     # New cross-revision guard: 5% is a disclosed measurement tolerance, not
     # permission to lower the original independent lifecycle/ctypes thresholds.
     regressions = {name: ratio for name, ratio in ratios.items() if ratio < 0.95}
@@ -74,7 +81,7 @@ def main() -> None:
     parser.add_argument("--baseline-revision", required=True)
     parser.add_argument("--candidate-revision", required=True)
     parser.add_argument("--output-dir", type=pathlib.Path, required=True)
-    parser.add_argument("--rounds", type=int, default=4)
+    parser.add_argument("--rounds", type=int, default=6)
     parser.add_argument("--cpu", type=int, default=0)
     args = parser.parse_args()
     if args.rounds < 3:

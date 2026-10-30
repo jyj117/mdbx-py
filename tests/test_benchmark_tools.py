@@ -80,7 +80,7 @@ def report() -> dict:
         },
         "results": {
             "clibmdbx": {
-                name: dict(ops_per_second=1000, sample_digest="same")
+                name: dict(ops_per_second=1000, sample_digest="same", first_scan_ops_per_second=1000)
                 for name in ("point_get", "one_shot_get", "short_transaction_get", "batch_get", "cursor_scan")
             }
         },
@@ -119,6 +119,8 @@ def test_cursor_repeats_keep_all_samples_and_validate_row_count() -> None:
     assert len(calls) == 10  # one warm-up plus every measured repeat
     assert result["operations"] == 9
     assert len(result["samples_ns"]) == 9
+    assert result["first_scan_ns"] > 0
+    assert result["first_scan_ops_per_second"] > 0
     assert result["seconds"] == sum(result["samples_ns"]) / 1e9
     with pytest.raises(AssertionError):
         timed_cursor(lambda: [], 1, 9)

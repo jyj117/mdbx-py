@@ -110,7 +110,9 @@ def validate_fixture(path: pathlib.Path, records: int, value_size: int) -> list[
 def timed_cursor(scan: Callable, records: int, repeats: int) -> dict[str, Any]:
     # Equal work for both bindings; one short scan is too sensitive to Python
     # allocator/GC scheduling to establish a cross-revision performance change.
+    first_start = time.perf_counter_ns()
     warm = scan()
+    first_scan_ns = time.perf_counter_ns() - first_start
     assert len(warm) == records
     del warm
     elapsed_samples = []
@@ -132,6 +134,8 @@ def timed_cursor(scan: Callable, records: int, repeats: int) -> dict[str, Any]:
         "ops_per_second": operations * 1e9 / elapsed,
         "samples_ns": elapsed_samples,
         "sample_digest": digest.hexdigest(),
+        "first_scan_ns": first_scan_ns,
+        "first_scan_ops_per_second": records * 1e9 / first_scan_ns,
     }
 
 
