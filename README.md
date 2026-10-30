@@ -7,10 +7,10 @@ Mithril-mine/libmdbx package.
 
 The hot path is hand-written CPython C API code calling the libmdbx C API
 directly. The extension embeds the official libmdbx 0.14.3 amalgamation, so a
-wheel does not load a system `libmdbx` and has no runtime Python dependencies.
+wheel contains libmdbx itself. Python typing compatibility uses `typing_extensions`.
 It does not use ctypes, CFFI, Cython, Rust, or a helper service.
 
-> **Stable release:** 1.0.4 deliberately uses a CPython-version-specific ABI
+> **Stable release:** 1.0.5 deliberately uses a CPython-version-specific ABI
 > for maximum hot-path performance. Public API compatibility follows Semantic
 > Versioning within the 1.x line.
 
@@ -54,9 +54,8 @@ transactions, `reader_check()`, management operations and close release that
 spare. Use an explicit read transaction and
 `get_many()` when several values must share one snapshot.
 
-The reset-handle optimization and `max_spare_txns` option above are **unreleased
-development changes on main**, not features of the published 1.0.4 wheels.
-Published 1.0.4 allocates/aborts each one-shot read and retains no idle slot.
+The reset-handle optimization and `max_spare_txns` option were added in 1.0.5.
+Version 1.0.4 allocates/aborts each one-shot read and retains no idle slot.
 
 ## Concurrency and lifetime rules
 

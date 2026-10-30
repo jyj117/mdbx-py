@@ -3,7 +3,7 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
-## Unreleased
+## 1.0.5 - 2026-10-31
 
 - Reuse at most one reset native read handle for `Environment.get()`, using
   official reset/renew APIs and a fresh snapshot for every call. No old pages

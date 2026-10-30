@@ -1,7 +1,7 @@
 # Python API and semantics
 
-This describes the development branch. The `max_spare_txns` option and private
-read-handle reuse are unreleased; published 1.0.4 uses allocate/abort per call.
+This describes version 1.0.5. The `max_spare_txns` option and private read-handle
+reuse were added in 1.0.5; version 1.0.4 uses allocate/abort per call.
 
 `Environment(path, *, flags=0, mode=0o664, max_readers=126, max_dbs=64,
 geometry=None, options=None, readonly=False, subdir=True, max_spare_txns=1)` opens immediately.
