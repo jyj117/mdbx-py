@@ -5,6 +5,10 @@ immutable.
 
 ## 1.0.5 - 2026-10-31
 
+- Build arm64 macOS wheels on the supported macOS 15 runner; macOS 14
+  brownouts/retirement prevent reliable publishing. Keep all wheel targets and
+  their installation/runtime tests.
+
 - Reuse at most one reset native read handle for `Environment.get()`, using
   official reset/renew APIs and a fresh snapshot for every call. No old pages
   or values are cached. `max_spare_txns=0` restores allocate/abort behavior.
