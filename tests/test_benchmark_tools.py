@@ -69,7 +69,7 @@ def test_original_lifecycle_threshold_accepts_exact_boundary(tmp_path: Path) -> 
 
 
 def report() -> dict:
-    return {
+    data = {
         "platform": dict(python="3.10", machine="x86_64", platform="Linux"),
         "config": dict(
             records=10000, value_size=32, iterations=500000, warmup=100000, cursor_repeats=9, cpu=0, path="/tmp/same"
@@ -86,6 +86,32 @@ def report() -> dict:
         },
         "rss_max_kib": 16000,
     }
+    data["results"]["clibmdbx"]["mixed_read_write"] = dict(
+        read_ops_per_second=1000, write_ops_per_second=1000, write_operations=10000, reader_threads=3
+    )
+    data["results"]["clibmdbx"]["concurrent_read"] = dict(ops_per_second=1000)
+    return data
+
+
+@pytest.mark.parametrize("field", ["read_ops_per_second", "write_ops_per_second"])
+def test_paired_mixed_guard_preserves_five_percent_limit(field: str) -> None:
+    base = [report() for _ in range(6)]
+    candidate = copy.deepcopy(base)
+    for item in candidate:
+        item["results"]["clibmdbx"]["mixed_read_write"][field] = 940
+    name = "mixed_read" if field == "read_ops_per_second" else "mixed_write"
+    assert name in CHECK_PAIR(base, candidate)["regressions"]
+    candidate[0]["results"]["clibmdbx"]["mixed_read_write"]["write_operations"] = 9999
+    with pytest.raises(ValueError, match="complete all writes"):
+        CHECK_PAIR(base, candidate)
+
+
+def test_paired_concurrent_guard_rejects_regression() -> None:
+    base = [report() for _ in range(6)]
+    candidate = copy.deepcopy(base)
+    for item in candidate:
+        item["results"]["clibmdbx"]["concurrent_read"]["ops_per_second"] = 940
+    assert "concurrent_read" in CHECK_PAIR(base, candidate)["regressions"]
 
 
 def test_paired_comparison_detects_regression_and_rejects_mismatched_inputs() -> None:

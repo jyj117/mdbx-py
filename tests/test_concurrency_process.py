@@ -17,6 +17,64 @@ import clibmdbx
 MDBX_BUSY_CODE = -30778
 
 
+@pytest.mark.parametrize("lookup", ["get", "getitem", "contains"])
+def test_point_read_yields_only_for_queued_writer(env: clibmdbx.Environment, lookup: str) -> None:
+    with env.write() as txn:
+        txn.put(b"key", b"committed")
+    reader = env.read()
+    holder = env.write()
+    entered = threading.Event()
+    observe = threading.Event()
+    observed = threading.Event()
+    errors: queue.Queue[BaseException] = queue.Queue()
+
+    def writer() -> None:
+        entered.set()
+        try:
+            with env.write() as txn:
+                txn.put(b"key", b"updated")
+        except BaseException as exc:
+            errors.put(exc)
+
+    def observer() -> None:
+        observe.wait(timeout=5)
+        observed.set()
+
+    waiting = threading.Thread(target=writer)
+    watching = threading.Thread(target=observer)
+    waiting.start()
+    watching.start()
+    previous_interval = sys.getswitchinterval()
+    try:
+        assert entered.wait(timeout=2)
+        time.sleep(0.05)  # writer queues behind the owner's still-live holder
+        assert waiting.is_alive()
+        sys.setswitchinterval(10.0)  # suppress periodic GIL handoff in this test
+        observe.set()
+        for _ in range(2000):
+            if lookup == "get":
+                assert reader.get(memoryview(b"key")) == b"committed"
+            elif lookup == "getitem":
+                assert reader[b"key"] == b"committed"
+            else:
+                assert b"key" in reader
+            if observed.is_set():
+                break
+        assert observed.is_set(), "point reads did not yield to the waiting writer"
+        assert waiting.is_alive()  # yielding never releases another thread's lock
+    finally:
+        sys.setswitchinterval(previous_interval)
+        observe.set()
+        holder.abort()
+        watching.join(timeout=5)
+        waiting.join(timeout=5)
+        reader.abort()
+    assert not watching.is_alive()
+    assert not waiting.is_alive()
+    assert errors.empty(), list(errors.queue)
+    assert env.get(b"key") == b"updated"
+
+
 def test_detached_batch_releases_gil_once(env: clibmdbx.Environment) -> None:
     keys = [f"detached-{index:06d}".encode() for index in range(50_000)]
     with env.write() as txn:

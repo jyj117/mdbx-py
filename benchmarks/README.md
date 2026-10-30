@@ -151,6 +151,17 @@ The original first-scan timing is also retained and independently checked for
 cross-revision regression; repeated warm scans do not hide a first-scan penalty.
 Artifacts are uploaded on failure as well as success.
 
+Mixed write/read throughput and concurrent reads also have the same 5%
+cross-revision limit, using median per-pair ratios. Mixed runs must complete
+all 10,000 writes with three readers. Two earlier six-pair runs at d42b4b6
+passed the original gates, but their combined mixed-write ratio median was
+0.919; these samples remain in Actions runs 41080250673 and 41082219010.
+That observation triggered a separate writer/GIL investigation rather than
+being discarded. Public point reads now conditionally yield only while a
+writer is waiting to begin; isolated native-stage timing separates GIL wakeup
+delay from commit I/O. No GIL switch interval or durability setting is changed
+by the performance harness or extension.
+
 ```sh
 python benchmarks/compare_revisions.py \
   --baseline-python /path/to/base-venv/bin/python \

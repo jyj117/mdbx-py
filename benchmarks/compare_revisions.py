@@ -51,6 +51,22 @@ def check_regression(baseline: list[dict], candidate: list[dict]) -> dict:
         r["results"]["clibmdbx"]["cursor_scan"]["first_scan_ops_per_second"] for r in candidate
     )
     ratios["cursor_first_scan"] = new_first / old_first
+    for old, new in zip(baseline, candidate, strict=True):
+        for report in (old, new):
+            mixed = report["results"]["clibmdbx"]["mixed_read_write"]
+            if mixed["write_operations"] != 10000 or mixed["reader_threads"] != 3:
+                raise ValueError("mixed workload must complete all writes with three readers")
+    for name, field in (("mixed_read", "read_ops_per_second"), ("mixed_write", "write_ops_per_second")):
+        ratios[name] = statistics.median(
+            new["results"]["clibmdbx"]["mixed_read_write"][field]
+            / old["results"]["clibmdbx"]["mixed_read_write"][field]
+            for old, new in zip(baseline, candidate, strict=True)
+        )
+    ratios["concurrent_read"] = statistics.median(
+        new["results"]["clibmdbx"]["concurrent_read"]["ops_per_second"]
+        / old["results"]["clibmdbx"]["concurrent_read"]["ops_per_second"]
+        for old, new in zip(baseline, candidate, strict=True)
+    )
     # New cross-revision guard: 5% is a disclosed measurement tolerance, not
     # permission to lower the original independent lifecycle/ctypes thresholds.
     regressions = {name: ratio for name, ratio in ratios.items() if ratio < 0.95}

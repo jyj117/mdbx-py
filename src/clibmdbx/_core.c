@@ -2573,6 +2573,21 @@ static int validate_scalar_put_flags(unsigned long flags, const char *function) 
   return 1;
 }
 
+static int check_point_read_txn(TxnObject *self) {
+  if (!check_txn(self, 0))
+    return 0;
+  if (self->readonly && self->env->pending_write_begins != 0) {
+    /* Tight Python read loops otherwise delay a ready writer reacquiring the
+       GIL after native begin. Yield only under actual writer contention, before
+       acquiring any buffer or native result pointer. Public ownership and
+       lifecycle checks still apply after another thread has run. */
+    Py_BEGIN_ALLOW_THREADS
+    Py_END_ALLOW_THREADS
+    return check_txn(self, 0);
+  }
+  return 1;
+}
+
 static PyObject *Txn_get(TxnObject *self, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
   PyObject *key_obj, *db_obj = Py_None, *default_obj = Py_None;
   if (kwnames == NULL) {
@@ -2596,7 +2611,7 @@ static PyObject *Txn_get(TxnObject *self, PyObject *const *args, Py_ssize_t narg
     if (values[2] != NULL)
       default_obj = values[2];
   }
-  if (!check_txn(self, 0))
+  if (!check_point_read_txn(self))
     return NULL;
   MDBX_dbi dbi;
   if (optional_db(self, db_obj, &dbi) == (DbObject *)-1)
@@ -2616,7 +2631,7 @@ static PyObject *Txn_get(TxnObject *self, PyObject *const *args, Py_ssize_t narg
 }
 
 static PyObject *Txn_getitem(TxnObject *self, PyObject *key_obj) {
-  if (!check_txn(self, 0))
+  if (!check_point_read_txn(self))
     return NULL;
   Py_buffer key_view;
   MDBX_val key, data;
@@ -2635,7 +2650,7 @@ static PyObject *Txn_getitem(TxnObject *self, PyObject *key_obj) {
 }
 
 static PyObject *Txn_contains(TxnObject *self, PyObject *key_obj) {
-  if (!check_txn(self, 0))
+  if (!check_point_read_txn(self))
     return NULL;
   Py_buffer key_view;
   MDBX_val key, data;

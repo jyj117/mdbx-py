@@ -13,6 +13,9 @@ immutable.
   spare; the default may reserve one idle reader slot per environment/process.
 - Keep all existing performance thresholds; compare base and candidate on the
   same runner and preserve benchmark evidence even when a performance check fails.
+- Let public read-transaction point lookups yield the GIL only while a writer
+  is waiting to begin, then revalidate the transaction before acquiring buffers.
+  Add paired mixed-read, mixed-write and concurrent-read regression guards.
 
 ## 1.0.4 - 2026-10-12
 

@@ -15,6 +15,13 @@ an application dependency cycle, not a lock libmdbx can resolve. Use
 `env.begin(write=True, flags=MDBX_TXN_TRY)` when a request must fail immediately
 instead of queueing.
 
+Unreleased development code also lets public read-transaction point lookups
+(`get`, subscription and membership) yield once when a writer is waiting to
+begin, then revalidates ownership/state before acquiring any key buffer or
+mapped result. Without a queued writer these lookups keep the GIL. This
+reduces GIL wakeup starvation; it does not promise a write deadline or resolve
+an application lock cycle, and does not change CPython's switch interval.
+
 Always create, commit or abort, and release a write transaction in the same
 thread callback. Do not put a live transaction into a queue, future, async task
 or object graph whose final reference may move to another worker.
