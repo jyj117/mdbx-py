@@ -19,18 +19,15 @@
 #include <process.h>
 #else
 #include <unistd.h>
-#ifdef __APPLE__
-#include <mach/mach.h>
-#endif
 #endif
 
 #include "mdbx.h"
 
 #define CLIBMDBX_VERSION "1.0.6"
-#define CLIBMDBX_RELEASE_TAG "v0.14.4"
-#define CLIBMDBX_RELEASE_COMMIT "a032e40c1c06eaf695a163cfc32d4a01ffb8b26c"
-#define CLIBMDBX_AMALGAMATION_COMMIT "716ce9d5ae5458fa1de44097dc6e8f80ed1e4809"
-#define CLIBMDBX_ARCHIVE_SHA256 "0dd6bf6048d5d208bc20d325cf93c8f88beda95802e9e3aa7958346611c36922"
+#define CLIBMDBX_RELEASE_TAG "v0.14.3"
+#define CLIBMDBX_RELEASE_COMMIT "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0"
+#define CLIBMDBX_AMALGAMATION_COMMIT "251562b2dc55266d8e6d0e6627ec88ecb410702f"
+#define CLIBMDBX_ARCHIVE_SHA256 "dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd"
 
 typedef struct EnvObject EnvObject;
 typedef struct TxnObject TxnObject;
@@ -1328,7 +1325,7 @@ static PyObject *Env_copy(EnvObject *self, PyObject *args, PyObject *kwargs) {
      retain the normal native semantics. */
   if (flags & MDBX_CP_OVERWRITE) {
     PyErr_SetString(PyExc_NotImplementedError,
-                    "MDBX_CP_OVERWRITE is disabled for libmdbx 0.14.4 safety; copy to a new path instead");
+                    "MDBX_CP_OVERWRITE is disabled for safety; copy to a new path instead");
     return NULL;
   }
   if (!begin_env_operation(self))
@@ -3380,7 +3377,7 @@ static PyObject *Db_rename(DbObject *self, PyObject *args) {
     PyBuffer_Release(&view);
     return NULL;
   }
-  /* Upstream #106: rename in 0.14.4 can persist a stale tree descriptor
+  /* Upstream #106: rename in 0.14.3 can persist a stale tree descriptor
      after an aborted write or a write in another process. The public stat
      API refreshes that descriptor before rename reads it. Keep this cold
      safety check even when a later engine also refreshes internally. */
@@ -3904,34 +3901,6 @@ static PyObject *module_limits(PyObject *module, PyObject *Py_UNUSED(ignored)) {
   (void)module;
   intptr_t system_page_size = 0, system_total_pages = 0, system_available_pages = 0;
   int rc = mdbx_get_sysraminfo(&system_page_size, &system_total_pages, &system_available_pages);
-#ifdef __APPLE__
-  if (rc == MDBX_ENOSYS || rc == ENOTSUP || rc == ENOSYS) {
-    /* 0.14.4 uses HOST_VM_INFO_COUNT for HOST_VM_INFO64. Keep the official
-       amalgamation intact; retry the optional available-memory query through
-       the system SDK with its matching structure/count, and release the port. */
-    rc = mdbx_get_sysraminfo(&system_page_size, &system_total_pages, NULL);
-    if (rc == MDBX_SUCCESS) {
-      mach_port_t host = mach_host_self();
-      if (host == MACH_PORT_NULL) {
-        rc = MDBX_ENOSYS;
-      } else {
-        vm_statistics64_data_t stats = {0};
-        mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-        kern_return_t status = host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&stats, &count);
-        kern_return_t released = mach_port_deallocate(mach_task_self(), host);
-        if (status != KERN_SUCCESS || released != KERN_SUCCESS) {
-          rc = MDBX_ENOSYS;
-        } else {
-          const uint64_t available = (uint64_t)stats.free_count + (uint64_t)stats.purgeable_count;
-          if (available > (uint64_t)INTPTR_MAX)
-            rc = EOVERFLOW;
-          else
-            system_available_pages = (intptr_t)available;
-        }
-      }
-    }
-  }
-#endif
   if (rc != MDBX_SUCCESS)
     return raise_mdbx(rc, "mdbx_get_sysraminfo");
   if (system_page_size <= 0 || system_total_pages <= 0 || system_available_pages < 0) {
@@ -4228,10 +4197,10 @@ PyMODINIT_FUNC PyInit__core(void) {
     return NULL;
   }
   if (MDBX_VERSION_MAJOR != 0 || MDBX_VERSION_MINOR != 14 || mdbx_version.major != 0 || mdbx_version.minor != 14 ||
-      mdbx_version.patch != 4 || mdbx_version.git.commit == NULL ||
+      mdbx_version.patch != 3 || mdbx_version.git.commit == NULL ||
       strcmp(mdbx_version.git.commit, CLIBMDBX_AMALGAMATION_COMMIT) != 0) {
     PyErr_Format(PyExc_ImportError,
-                 "clibmdbx was built for embedded libmdbx 0.14.4/%s but loaded %u.%u.%u/%s",
+                 "clibmdbx was built for embedded libmdbx 0.14.3/%s but loaded %u.%u.%u/%s",
                  CLIBMDBX_AMALGAMATION_COMMIT, (unsigned)mdbx_version.major, (unsigned)mdbx_version.minor,
                  (unsigned)mdbx_version.patch, mdbx_version.git.commit ? mdbx_version.git.commit : "unknown");
     return NULL;
@@ -4291,7 +4260,7 @@ PyMODINIT_FUNC PyInit__core(void) {
       PyModule_AddObjectRef(module, "Database", (PyObject *)&DbType) < 0 ||
       PyModule_AddObjectRef(module, "Cursor", (PyObject *)&CursorType) < 0 ||
       PyModule_AddStringConstant(module, "__version__", CLIBMDBX_VERSION) < 0 ||
-      PyModule_AddStringConstant(module, "LIBMDBX_VERSION", "0.14.4") < 0)
+      PyModule_AddStringConstant(module, "LIBMDBX_VERSION", "0.14.3") < 0)
     goto error;
 
   ADD_INT(module, MDBX_ENV_DEFAULTS);

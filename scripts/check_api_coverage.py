@@ -25,7 +25,7 @@ def main() -> int:
     digest = hashlib.sha256(("\n".join(names) + "\n").encode()).hexdigest()
     expected_digest = "ded16bddaf8aa5219a4448bbe900db5a0e82c718902dfabb2806de0c14998413"
     if len(names) != 171:
-        print(f"expected 171 declarations for pinned 0.14.4, found {len(names)}", file=sys.stderr)
+        print(f"expected 171 declarations for pinned 0.14.3, found {len(names)}", file=sys.stderr)
         return 1
     if digest != expected_digest:
         print(f"official declaration set changed: expected {expected_digest}, got {digest}", file=sys.stderr)

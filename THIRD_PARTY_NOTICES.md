@@ -1,11 +1,11 @@
 # Third-party notices
 
-## libmdbx 0.14.4
+## libmdbx 0.14.3
 
 - Project: libmdbx
 - Upstream: https://github.com/Mithril-mine/libmdbx
-- Release: `v0.14.4` (2026-09-18)
-- Amalgamation source commit: `716ce9d5ae5458fa1de44097dc6e8f80ed1e4809`
+- Release: `v0.14.3` (2026-08-09)
+- Amalgamation source commit: `251562b2dc55266d8e6d0e6627ec88ecb410702f`
 - License: Apache License 2.0
 - Copyright: 2015-2026 Leonid Yuriev and libmdbx authors
 - Included files: `vendor/libmdbx/mdbx.c`, `mdbx.h`, `mdbx-internals.h`,

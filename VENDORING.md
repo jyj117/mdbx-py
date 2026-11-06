@@ -1,18 +1,18 @@
 # Vendoring libmdbx
 
 The build is offline and deterministic with respect to its C sources. It never
-downloads libmdbx. The current pin is the official stable release 0.14.4:
+downloads libmdbx. The current pin is the official stable release 0.14.3:
 
 | Item | Value |
 | --- | --- |
-| Release tag | `v0.14.4` |
-| Annotated tag object | `6dae84f65ce208f8299c024186a13dfd1f258f78` |
-| Tag release commit | `a032e40c1c06eaf695a163cfc32d4a01ffb8b26c` |
-| Amalgamation source commit | `716ce9d5ae5458fa1de44097dc6e8f80ed1e4809` |
-| Source tree | `4b437ab251d578093abf92b5f65c568bf01004ac` |
-| Official archive SHA-256 | `0dd6bf6048d5d208bc20d325cf93c8f88beda95802e9e3aa7958346611c36922` |
-| `mdbx.c` SHA-256 | `58b770f90b75c533fd66d6d040764f75589565a2bc46034cc2ec2d8d9b257176` |
-| `mdbx.h` SHA-256 | `0290c40b3a40346eb2e892d17c50b9a488464c116ba317c2ad977e78ae87451b` |
+| Release tag | `v0.14.3` |
+| Annotated tag object | `cf3e13938bf974260872e629713f6ecf30e62030` |
+| Tag release commit | `f7a3a9323cacacfa9dc6137ae7a7252a67744ff0` |
+| Amalgamation source commit | `251562b2dc55266d8e6d0e6627ec88ecb410702f` |
+| Source tree | `e4baa5caf1001120895ba9282f645236e2fb160b` |
+| Official archive SHA-256 | `dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd` |
+| `mdbx.c` SHA-256 | `52d061dc77b1485da1ab7d9df336c750d021e3b1c7267db437bb6100cb3b001c` |
+| `mdbx.h` SHA-256 | `1feb06b7f6f65ab3ad16df51cffbea977331d7426e6d72bdc07f4feac5a9cbb6` |
 
 `scripts/verify_vendor.py` verifies provenance metadata and the SHA-256 of every
 vendored source, tool header, manifest and notice, plus the version/commit

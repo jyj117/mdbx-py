@@ -3,33 +3,26 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
-## 1.0.6 - 2026-11-06
+## 1.0.6 - 2026-11-07
 
-- Embed official stable libmdbx 0.14.4, including GC tuning, reader error-code,
-  corrupted-page validation and Windows storage-placement fixes. No durability
-  defaults or data-format settings are changed.
 - Refresh a named table through the official stat API before renaming it.
   This prevents stale aborted-write metadata from being committed by upstream
   versions affected by libmdbx-devel #106. Add rollback, nested rollback and
-  reopen regression coverage; point-read hot paths are unchanged.
+  reopen regressions. Point-read hot paths are unchanged.
 - Reject `MDBX_CP_OVERWRITE` in `Environment.copy()` before accessing the
-  destination. The embedded formal release lacks the upstream overwrite-copy
-  failure-path fixes; copying to a fresh path remains supported. This explicit
-  safety restriction raises `NotImplementedError` instead of risking an old
-  backup. It will be reconsidered after a fixed formal upstream release.
-- Windows may now reject unsupported storage with `MDBX_EREMOTE`; do not bypass
-  the engine's placement checks. Version 0.14.5 engineering snapshots are not
-  included.
-- Use the supported native build-timestamp macro with `SOURCE_DATE_EPOCH` (or
-  the pinned source timestamp). This preserves strict Debian `-Wdate-time`
-  builds and avoids wall-clock-dependent engine metadata.
-- Compare deliberate engine upgrades against both exact source pins. Mixed
-  benchmarks complete identical fixed read/write counts and validate reader
-  digests, retaining snapshots through all writes. Original performance limits
-  are unchanged; historical unbounded-reader results are retained as diagnostics.
-- On macOS, retry unsupported available-memory diagnostics through the official
-  Mach 64-bit API with the matching count. Release the host port on every path;
-  keep upstream source bytes unchanged. Other native errors remain errors.
+  destination. Copying to a fresh path remains supported. This explicit safety
+  restriction raises `NotImplementedError` instead of risking an old backup
+  on native overwrite-copy failure paths; it will be reconsidered after a
+  fixed formal upstream release.
+- Retain the verified official libmdbx 0.14.3 pin. Staging 0.14.4 exposed a
+  macOS native RAM-query regression, so it is not included in this release.
+  No data-format or durability defaults are changed.
+- Use the supported build-timestamp macro with `SOURCE_DATE_EPOCH` or the
+  pinned source timestamp, preserving strict Debian `-Wdate-time` builds.
+- Compare benchmark engines against exact source pins and finish identical
+  fixed read/write counts, retaining snapshots through every write. Original
+  performance limits are unchanged; older unbounded-reader results remain
+  diagnostic evidence.
 
 ## 1.0.5 - 2026-10-31
 

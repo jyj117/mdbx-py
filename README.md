@@ -6,7 +6,7 @@ import name are `clibmdbx`. It is a community project and is not an official
 Mithril-mine/libmdbx package.
 
 The hot path is hand-written CPython C API code calling the libmdbx C API
-directly. The extension embeds the official libmdbx 0.14.4 amalgamation, so a
+directly. The extension embeds the official libmdbx 0.14.3 amalgamation, so a
 wheel contains libmdbx itself. Python typing compatibility uses `typing_extensions`.
 It does not use ctypes, CFFI, Cython, Rust, or a helper service.
 
@@ -187,12 +187,12 @@ and [RELEASING.md](RELEASING.md).
 
 ## Embedded source and license
 
-This source tree pins official libmdbx **0.14.4**, upstream release tag
-`v0.14.4`. The release tag resolves to commit
-`a032e40c1c06eaf695a163cfc32d4a01ffb8b26c`; the official amalgamation records
-source commit `716ce9d5ae5458fa1de44097dc6e8f80ed1e4809`.
+This source tree pins official libmdbx **0.14.3**, upstream release tag
+`v0.14.3`. The release tag resolves to commit
+`f7a3a9323cacacfa9dc6137ae7a7252a67744ff0`; the official amalgamation records
+source commit `251562b2dc55266d8e6d0e6627ec88ecb410702f`.
 The official amalgamation archive SHA-256 is
-`0dd6bf6048d5d208bc20d325cf93c8f88beda95802e9e3aa7958346611c36922`.
+`dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd`.
 
 The wrapper and libmdbx are Apache-2.0 licensed. The sdist and wheels retain the
 wrapper and upstream `LICENSE`, `NOTICE`, and `COPYRIGHT`; see

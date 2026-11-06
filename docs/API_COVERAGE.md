@@ -1,4 +1,4 @@
-# Official libmdbx 0.14.4 C API coverage
+# Official libmdbx 0.14.3 C API coverage
 
 This matrix accounts for all 171 `LIBMDBX_API` function declarations in the
 vendored stable header. “Wrapped” means the Python API calls that function or a

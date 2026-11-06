@@ -1,7 +1,7 @@
 # Production operations
 
 This runbook describes the failure and capacity rules that matter for a
-long-running service. They follow libmdbx 0.14.4's single-writer, MVCC reader
+long-running service. They follow libmdbx 0.14.3's single-writer, MVCC reader
 table, mapping and transaction-owner contracts. `clibmdbx` does not add a
 background transaction manager.
 
@@ -207,9 +207,9 @@ The second must be run inside a disposable quota,
 loopback or tmpfs/container mount and writes until the real filesystem rejects
 I/O. Never point either command at production data.
 
-## Upstream 0.14.4 boundaries
+## Upstream 0.14.3 boundaries
 
-Only the formal 0.14.4 release is embedded; 0.14.5 engineering fixes are not
+Only the formal 0.14.3 release is embedded; 0.14.5 engineering fixes are not
 silently imported. In 1.0.6, table rename refreshes its native record through
 `mdbx_dbi_stat()` to avoid upstream issue #106, and overwrite-copy is rejected
 before touching the destination (upstream #58/#112). Use a fresh backup path.

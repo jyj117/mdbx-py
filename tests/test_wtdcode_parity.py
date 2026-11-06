@@ -197,8 +197,8 @@ def test_wtd_get_build_info() -> None:
 def test_wtd_get_version_info() -> None:
     info = clibmdbx.version_info()
     version = info["libmdbx"]
-    assert (version["major"], version["minor"], version["patch"]) == (0, 14, 4)
-    assert version["git_commit"] == "716ce9d5ae5458fa1de44097dc6e8f80ed1e4809"
+    assert (version["major"], version["minor"], version["patch"]) == (0, 14, 3)
+    assert version["git_commit"] == "251562b2dc55266d8e6d0e6627ec88ecb410702f"
 
 
 def test_wtd_get_sysram() -> None:
