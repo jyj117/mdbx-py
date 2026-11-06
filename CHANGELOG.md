@@ -27,6 +27,9 @@ immutable.
   benchmarks complete identical fixed read/write counts and validate reader
   digests, retaining snapshots through all writes. Original performance limits
   are unchanged; historical unbounded-reader results are retained as diagnostics.
+- On macOS, retry unsupported available-memory diagnostics through the official
+  Mach 64-bit API with the matching count. Release the host port on every path;
+  keep upstream source bytes unchanged. Other native errors remain errors.
 
 ## 1.0.5 - 2026-10-31
 

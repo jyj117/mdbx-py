@@ -19,6 +19,9 @@
 #include <process.h>
 #else
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif
 #endif
 
 #include "mdbx.h"
@@ -3901,6 +3904,34 @@ static PyObject *module_limits(PyObject *module, PyObject *Py_UNUSED(ignored)) {
   (void)module;
   intptr_t system_page_size = 0, system_total_pages = 0, system_available_pages = 0;
   int rc = mdbx_get_sysraminfo(&system_page_size, &system_total_pages, &system_available_pages);
+#ifdef __APPLE__
+  if (rc == MDBX_ENOSYS || rc == ENOTSUP || rc == ENOSYS) {
+    /* 0.14.4 uses HOST_VM_INFO_COUNT for HOST_VM_INFO64. Keep the official
+       amalgamation intact; retry the optional available-memory query through
+       the system SDK with its matching structure/count, and release the port. */
+    rc = mdbx_get_sysraminfo(&system_page_size, &system_total_pages, NULL);
+    if (rc == MDBX_SUCCESS) {
+      mach_port_t host = mach_host_self();
+      if (host == MACH_PORT_NULL) {
+        rc = MDBX_ENOSYS;
+      } else {
+        vm_statistics64_data_t stats = {0};
+        mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+        kern_return_t status = host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&stats, &count);
+        kern_return_t released = mach_port_deallocate(mach_task_self(), host);
+        if (status != KERN_SUCCESS || released != KERN_SUCCESS) {
+          rc = MDBX_ENOSYS;
+        } else {
+          const uint64_t available = (uint64_t)stats.free_count + (uint64_t)stats.purgeable_count;
+          if (available > (uint64_t)INTPTR_MAX)
+            rc = EOVERFLOW;
+          else
+            system_available_pages = (intptr_t)available;
+        }
+      }
+    }
+  }
+#endif
   if (rc != MDBX_SUCCESS)
     return raise_mdbx(rc, "mdbx_get_sysraminfo");
   if (system_page_size <= 0 || system_total_pages <= 0 || system_available_pages < 0) {
