@@ -313,7 +313,7 @@ def test_copy_and_readonly(env: clibmdbx.Environment, tmp_path: pathlib.Path) ->
     with env.write() as txn:
         txn.put(b"copy", b"value")
     destination = tmp_path / "copy"
-    env.copy(destination, flags=clibmdbx.MDBX_CP_COMPACT)
+    env.copy(destination)
     copied = clibmdbx.Environment(destination, readonly=True)
     try:
         with copied.read() as txn:

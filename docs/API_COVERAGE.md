@@ -6,9 +6,10 @@ strictly more general sibling directly. “Represented” means the capability i
 implemented safely through another public libmdbx primitive. “Excluded” is an
 intentional boundary, not an accidental omission.
 
-Safety boundary in 1.0.6: `MDBX_CP_OVERWRITE` is exported for identification but
+Safety boundary in 1.0.6: `MDBX_CP_OVERWRITE` and `MDBX_CP_COMPACT` are exported for identification but
 rejected by `Environment.copy()` until a formal engine release includes the
-upstream overwrite-copy failure-path fixes. Copying to a fresh path is supported.
+upstream overwrite-copy and compact-copy failure-path fixes (#58/#112/#171).
+Copying to a fresh path with `flags=0` is supported.
 Rename uses `mdbx_dbi_stat()` before `mdbx_dbi_rename2()` to refresh stale native
 metadata (upstream libmdbx-devel #106).
 

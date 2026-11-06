@@ -212,7 +212,9 @@ I/O. Never point either command at production data.
 Only the formal 0.14.3 release is embedded; 0.14.5 engineering fixes are not
 silently imported. In 1.0.6, table rename refreshes its native record through
 `mdbx_dbi_stat()` to avoid upstream issue #106, and overwrite-copy is rejected
-before touching the destination (upstream #58/#112). Use a fresh backup path.
+before touching the destination (upstream #58/#112). Compact copy is also
+rejected because its writer error can strand the producer indefinitely
+(upstream #171). Use a fresh backup path with `flags=0`.
 
 Keep exactly one Environment per physical database per process, including
 path aliases. This is especially important on classic-fcntl platforms such as

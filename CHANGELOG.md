@@ -14,6 +14,10 @@ immutable.
   restriction raises `NotImplementedError` instead of risking an old backup
   on native overwrite-copy failure paths; it will be reconsidered after a
   fixed formal upstream release.
+- Also reject `MDBX_CP_COMPACT` before filesystem access: upstream #171 can
+  hang indefinitely after the compact-copy writer encounters an I/O failure.
+  Reproduced under real ENOSPC with a delayed writer start. Regular fresh-path
+  backups remain supported and their ENOSPC/atomicity checks are retained.
 - Retain the verified official libmdbx 0.14.3 pin. Staging 0.14.4 exposed a
   macOS native RAM-query regression, so it is not included in this release.
   No data-format or durability defaults are changed.

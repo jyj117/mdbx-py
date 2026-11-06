@@ -6,10 +6,10 @@ reuse were added in 1.0.5; version 1.0.4 uses allocate/abort per call.
 `Environment(path, *, flags=0, mode=0o664, max_readers=126, max_dbs=64,
 geometry=None, options=None, readonly=False, subdir=True, max_spare_txns=1)` opens immediately.
 
-In 1.0.6, `env.copy(path, flags=...)` rejects `MDBX_CP_OVERWRITE` with
+In 1.0.6, `env.copy(path, flags=...)` rejects `MDBX_CP_OVERWRITE` and `MDBX_CP_COMPACT` with
 `NotImplementedError` before touching the destination: the embedded 0.14.3
-release lacks upstream fixes for destructive overwrite-copy failure paths.
-Copy to a new destination path instead. A table rename refreshes native table
+release lacks upstream fixes for destructive overwrite failures and compact-copy
+I/O hangs. Copy to a fresh destination with `flags=0` instead. A table rename refreshes native table
 metadata first, including after an aborted write. These checks do not affect
 point lookups. Maintain one Environment per physical database per process and
 share it across threads; do not open aliases of the same database independently.

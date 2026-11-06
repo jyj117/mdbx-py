@@ -286,3 +286,18 @@ def test_copy_overwrite_rejected_before_destination_is_touched(env, tmp_path) ->
     with pytest.raises(NotImplementedError):
         env.copy(missing, flags=clibmdbx.MDBX_CP_OVERWRITE)
     assert not missing.exists()
+
+
+@pytest.mark.parametrize("extra_flags", [0, clibmdbx.MDBX_CP_DONT_FLUSH, clibmdbx.MDBX_CP_THROTTLE_MVCC])
+def test_unsafe_compact_copy_rejected_before_path_access(env, extra_flags) -> None:
+    class ForbiddenPath:
+        def __fspath__(self):
+            raise AssertionError("unsafe copy must reject before accessing its destination")
+
+    with env.write() as txn:
+        txn.put(b"source", b"must survive")
+    with pytest.raises(NotImplementedError, match="MDBX_CP_COMPACT.*flags=0"):
+        env.copy(ForbiddenPath(), flags=clibmdbx.MDBX_CP_COMPACT | extra_flags)
+    assert env.get(b"source") == b"must survive"
+    with env.write() as txn:
+        txn.put(b"after-rejection", b"still writable")

@@ -15,10 +15,11 @@ It does not use ctypes, CFFI, Cython, Rust, or a helper service.
 > Versioning within the 1.x line.
 
 In 1.0.6, named-table rename refreshes metadata after aborted writes.
-`Environment.copy()` temporarily rejects `MDBX_CP_OVERWRITE` with
-`NotImplementedError` because the formal embedded engine lacks the upstream
-overwrite-copy failure-path fixes. Copy to a fresh path instead. Default point
-reads and durability settings are unchanged.
+`Environment.copy()` temporarily rejects `MDBX_CP_OVERWRITE` and
+`MDBX_CP_COMPACT` with `NotImplementedError`: the formal embedded engine lacks
+upstream fixes for destructive overwrite failures and compact-copy I/O hangs.
+Use a fresh destination with `flags=0`. Default point reads and durability
+settings are unchanged.
 
 ## Quick start
 

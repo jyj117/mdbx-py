@@ -1328,6 +1328,13 @@ static PyObject *Env_copy(EnvObject *self, PyObject *args, PyObject *kwargs) {
                     "MDBX_CP_OVERWRITE is disabled for safety; copy to a new path instead");
     return NULL;
   }
+  /* Upstream #171: a compact-copy writer error may leave the producer
+     asleep forever. Reject this mode before filesystem access as well. */
+  if (flags & MDBX_CP_COMPACT) {
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "MDBX_CP_COMPACT is disabled for safety; copy to a new path with flags=0 instead");
+    return NULL;
+  }
   if (!begin_env_operation(self))
     return NULL;
   int rc = native_copy_path(self->env, path, (MDBX_copy_flags_t)flags);
