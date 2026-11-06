@@ -18,6 +18,52 @@ MDBX_BUSY_CODE = -30778
 
 
 @pytest.mark.parametrize("lookup", ["get", "getitem", "contains"])
+def test_point_read_allows_active_writer_to_finish(env: clibmdbx.Environment, lookup: str) -> None:
+    with env.write() as txn:
+        txn.put(b"key", b"before")
+    reader = env.read()
+    entered = threading.Event()
+    finish = threading.Event()
+    done = threading.Event()
+    errors: queue.Queue[BaseException] = queue.Queue()
+
+    def writer() -> None:
+        try:
+            with env.write() as txn:
+                txn.put(b"key", b"after")
+                entered.set()
+                assert finish.wait(timeout=5)
+            done.set()
+        except BaseException as exc:
+            errors.put(exc)
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    previous_interval = sys.getswitchinterval()
+    try:
+        assert entered.wait(timeout=2)
+        sys.setswitchinterval(10.0)
+        finish.set()
+        deadline = time.monotonic() + 1.0
+        while not done.is_set() and time.monotonic() < deadline:
+            if lookup == "get":
+                assert reader.get(b"key") == b"before"
+            elif lookup == "getitem":
+                assert reader[b"key"] == b"before"
+            else:
+                assert b"key" in reader
+        assert done.is_set(), "read loop starved the already-active writer"
+    finally:
+        sys.setswitchinterval(previous_interval)
+        finish.set()
+        thread.join(timeout=5)
+        reader.abort()
+    assert not thread.is_alive()
+    assert errors.empty(), list(errors.queue)
+    assert env.get(b"key") == b"after"
+
+
+@pytest.mark.parametrize("lookup", ["get", "getitem", "contains"])
 def test_point_read_yields_only_for_queued_writer(env: clibmdbx.Environment, lookup: str) -> None:
     with env.write() as txn:
         txn.put(b"key", b"committed")

@@ -147,6 +147,29 @@ def test_paired_concurrent_guard_rejects_regression() -> None:
     assert "concurrent_read" in CHECK_PAIR(base, candidate)["regressions"]
 
 
+def test_paired_engine_upgrade_requires_exact_pins_and_keeps_regression_gate() -> None:
+    base = [report() for _ in range(4)]
+    candidate = copy.deepcopy(base)
+    for item in base:
+        item["diagnostics"]["libmdbx"]["git_commit"] = "a" * 40
+    for item in candidate:
+        item["diagnostics"]["libmdbx"].update(patch=4, git_commit="b" * 40)
+    with pytest.raises(ValueError, match="bundled libmdbx mismatch"):
+        CHECK_PAIR(base, candidate)
+    assert CHECK_PAIR(base, candidate, ("a" * 40, "b" * 40))["regressions"] == {}
+    for pins in (("a" * 40, "c" * 40), ("c" * 40, "b" * 40)):
+        with pytest.raises(ValueError, match="unexpected bundled"):
+            CHECK_PAIR(base, candidate, pins)
+    with pytest.raises(ValueError, match="two exact"):
+        CHECK_PAIR(base, candidate, ("a", "b"))
+    for item in candidate:
+        item["results"]["clibmdbx"]["point_get"]["ops_per_second"] = 940
+    assert "point_get" in CHECK_PAIR(base, candidate, ("a" * 40, "b" * 40))["regressions"]
+    candidate[-1]["diagnostics"]["libmdbx"]["patch"] = 5
+    with pytest.raises(ValueError, match="metadata changed"):
+        CHECK_PAIR(base, candidate, ("a" * 40, "b" * 40))
+
+
 def test_paired_comparison_detects_regression_and_rejects_mismatched_inputs() -> None:
     base = [report() for _ in range(4)]
     candidate = copy.deepcopy(base)

@@ -14,6 +14,11 @@ metadata first, including after an aborted write. These checks do not affect
 point lookups. Maintain one Environment per physical database per process and
 share it across threads; do not open aliases of the same database independently.
 
+Read-transaction point lookups in 1.0.6 also give an active writer an opportunity
+to reacquire the GIL at least once per 64 reads, including during commit. They
+revalidate ownership/state after each handoff. With no active or queued writer,
+the default path keeps the GIL and does not update the handoff counter.
+
 `geometry` is a six-item `(lower, now, upper, grow, shrink, page_size)` sequence;
 use `-1` for unchanged values. `options` maps exported `MDBX_opt_*` constants to
 integer values.
