@@ -18,13 +18,13 @@ MDBX_BUSY_CODE = -30778
 
 
 @pytest.mark.parametrize("lookup", ["get", "getitem", "contains"])
-def test_point_read_allows_active_writer_to_finish(env: clibmdbx.Environment, lookup: str) -> None:
+def test_point_read_yields_for_active_writer(env: clibmdbx.Environment, lookup: str) -> None:
     with env.write() as txn:
         txn.put(b"key", b"before")
     reader = env.read()
     entered = threading.Event()
     finish = threading.Event()
-    done = threading.Event()
+    progressed = threading.Event()
     errors: queue.Queue[BaseException] = queue.Queue()
 
     def writer() -> None:
@@ -33,7 +33,11 @@ def test_point_read_allows_active_writer_to_finish(env: clibmdbx.Environment, lo
                 txn.put(b"key", b"after")
                 entered.set()
                 assert finish.wait(timeout=5)
-            done.set()
+                # Observe GIL progress while the native writer is still active.
+                # A marker AFTER commit can need another Python timeslice after
+                # the active-writer count is correctly cleared, especially on
+                # newer CPython versions; idle readers must not yield for that.
+                progressed.set()
         except BaseException as exc:
             errors.put(exc)
 
@@ -45,14 +49,14 @@ def test_point_read_allows_active_writer_to_finish(env: clibmdbx.Environment, lo
         sys.setswitchinterval(10.0)
         finish.set()
         deadline = time.monotonic() + 1.0
-        while not done.is_set() and time.monotonic() < deadline:
+        while not progressed.is_set() and time.monotonic() < deadline:
             if lookup == "get":
                 assert reader.get(b"key") == b"before"
             elif lookup == "getitem":
                 assert reader[b"key"] == b"before"
             else:
                 assert b"key" in reader
-        assert done.is_set(), "read loop starved the already-active writer"
+        assert progressed.is_set(), "read loop starved the already-active writer"
     finally:
         sys.setswitchinterval(previous_interval)
         finish.set()
