@@ -102,7 +102,6 @@ struct TxnObject {
   int broken;
   int finished;
   int owns_root_writer_gate;
-  uint32_t writer_read_count;
 };
 
 struct DbObject {
@@ -1656,7 +1655,6 @@ static PyObject *new_transaction(EnvObject *env, TxnObject *parent, MDBX_txn *na
   self->broken = 0;
   self->finished = 0;
   self->owns_root_writer_gate = owns_root_writer_gate;
-  self->writer_read_count = 0;
   env->active_txns++;
   if (!readonly) {
     if (env->active_write_txns == 0)
@@ -2587,14 +2585,11 @@ static int validate_scalar_put_flags(unsigned long flags, const char *function) 
 static int check_point_read_txn(TxnObject *self) {
   if (!check_txn(self, 0))
     return 0;
-  if (self->readonly &&
-      (self->env->pending_write_begins != 0 ||
-       (self->env->active_write_txns != 0 && (++self->writer_read_count & 63u) == 0))) {
+  if (self->readonly && self->env->pending_write_begins != 0) {
     /* Tight Python read loops otherwise delay a ready writer reacquiring the
-       GIL after native begin or commit. While a writer is active, amortize
-       handoffs across at most 64 reads; idle point reads never release the GIL
-       or update a counter. Yield before acquiring any buffer or mapped result
-       pointer, and revalidate ownership/lifecycle after another thread runs. */
+       GIL after native begin. Yield only under actual writer contention, before
+       acquiring any buffer or native result pointer. Public ownership and
+       lifecycle checks still apply after another thread has run. */
     Py_BEGIN_ALLOW_THREADS
     Py_END_ALLOW_THREADS
     return check_txn(self, 0);

@@ -135,6 +135,14 @@ must match its pin and maintain identical metadata across rounds; without the
 two pins, differing engines are still rejected. Dataset, build, throughput,
 RSS and original lifecycle/ctypes gates remain unchanged.
 
+Mixed comparisons use `fixed-read-write-v1`: three readers each execute the
+configured fixed iteration count, and the writer executes 100 transactions of
+100 puts. Reader snapshots remain live until every write finishes, even if a
+reader finishes its queries earlier. The timer covers completion of both sides.
+Counts and snapshot digests must match; historical unbounded-reader reports
+are rejected. This avoids measuring different amounts of extra reading when
+thread scheduling delays a writer. The 5% throughput tolerance is unchanged.
+
 The benchmark gate remains unchanged: one-shot/reused >= 0.50,
 one-shot/equivalent-short-transaction >= 1.10, and native/ctypes point, batch and
 cursor >= 2x/5x/5x. Unit tests reject values immediately below every threshold.

@@ -23,11 +23,10 @@ immutable.
 - Use the supported native build-timestamp macro with `SOURCE_DATE_EPOCH` (or
   the pinned source timestamp). This preserves strict Debian `-Wdate-time`
   builds and avoids wall-clock-dependent engine metadata.
-- Let read-transaction point lookups hand off the GIL periodically while a writer
-  is active, including native commit, then revalidate the reader. This prevents
-  commit starvation in tight mixed read/write loops. Read-only workloads never
-  release the GIL or update the handoff counter. Benchmark engine upgrades are
-  checked against both exact source pins without weakening performance gates.
+- Compare deliberate engine upgrades against both exact source pins. Mixed
+  benchmarks complete identical fixed read/write counts and validate reader
+  digests, retaining snapshots through all writes. Original performance limits
+  are unchanged; historical unbounded-reader results are retained as diagnostics.
 
 ## 1.0.5 - 2026-10-31
 

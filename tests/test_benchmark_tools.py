@@ -105,7 +105,15 @@ def report() -> dict:
     data = {
         "platform": dict(python="3.10", machine="x86_64", platform="Linux"),
         "config": dict(
-            records=10000, value_size=32, iterations=500000, warmup=100000, cursor_repeats=9, cpu=0, path="/tmp/same"
+            records=10000,
+            value_size=32,
+            iterations=500000,
+            warmup=100000,
+            cursor_repeats=9,
+            cpu=0,
+            path="/tmp/same",
+            threads=4,
+            concurrent_iterations=1000,
         ),
         "diagnostics": {
             "build": dict(compiler="gcc", flags="O3", options="checked", target="x86_64"),
@@ -120,7 +128,13 @@ def report() -> dict:
         "rss_max_kib": 16000,
     }
     data["results"]["clibmdbx"]["mixed_read_write"] = dict(
-        read_ops_per_second=1000, write_ops_per_second=1000, write_operations=10000, reader_threads=3
+        read_ops_per_second=1000,
+        write_ops_per_second=1000,
+        write_operations=10000,
+        reader_threads=3,
+        workload="fixed-read-write-v1",
+        read_operations=3000,
+        reader_digests=["same"] * 3,
     )
     data["results"]["clibmdbx"]["concurrent_read"] = dict(ops_per_second=1000)
     return data
@@ -145,6 +159,23 @@ def test_paired_concurrent_guard_rejects_regression() -> None:
     for item in candidate:
         item["results"]["clibmdbx"]["concurrent_read"]["ops_per_second"] = 940
     assert "concurrent_read" in CHECK_PAIR(base, candidate)["regressions"]
+
+
+def test_paired_mixed_requires_identical_complete_work() -> None:
+    base = [report() for _ in range(4)]
+    candidate = copy.deepcopy(base)
+    mixed = candidate[0]["results"]["clibmdbx"]["mixed_read_write"]
+    mixed["read_operations"] -= 1
+    with pytest.raises(ValueError, match="every fixed reader"):
+        CHECK_PAIR(base, candidate)
+    mixed["read_operations"] += 1
+    mixed["reader_digests"][0] = "wrong"
+    with pytest.raises(ValueError, match="mixed reader data"):
+        CHECK_PAIR(base, candidate)
+    mixed["reader_digests"][0] = "same"
+    mixed["workload"] = "unbounded"
+    with pytest.raises(ValueError, match="fixed read/write protocol"):
+        CHECK_PAIR(base, candidate)
 
 
 def test_paired_engine_upgrade_requires_exact_pins_and_keeps_regression_gate() -> None:
@@ -186,6 +217,23 @@ def test_paired_comparison_detects_regression_and_rejects_mismatched_inputs() ->
         CHECK_PAIR(base, candidate)
     with pytest.raises(ValueError, match="three complete"):
         CHECK_PAIR(base[:2], base[:2])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="benchmark runner uses Linux resource accounting")
+def test_mixed_workload_completes_fixed_read_and_write_counts(tmp_path: Path) -> None:
+    from argparse import Namespace
+
+    mixed = runpy.run_path(str(ROOT / "benchmarks" / "benchmark.py"))["bench_mixed_clib"]
+    result = mixed(
+        tmp_path / "mixed-counts", Namespace(records=10, value_size=32, threads=4, concurrent_iterations=1000)
+    )
+    assert result["workload"] == "fixed-read-write-v1"
+    assert result["write_operations"] == 10000
+    assert result["reader_threads"] == 3
+    assert result["read_operations"] == 3000
+    assert len(result["reader_digests"]) == 3
+    assert all(result["reader_digests"])
+    assert len(set(result["reader_digests"])) == 1
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="benchmark runner uses Linux resource accounting")

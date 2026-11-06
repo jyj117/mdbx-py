@@ -35,7 +35,17 @@ def check_regression(
         for field in ("python", "machine", "platform"):
             if old["platform"][field] != new["platform"][field]:
                 raise ValueError(f"platform mismatch: {field}")
-        for field in ("records", "value_size", "iterations", "warmup", "cursor_repeats", "cpu", "path"):
+        for field in (
+            "records",
+            "value_size",
+            "iterations",
+            "warmup",
+            "cursor_repeats",
+            "cpu",
+            "path",
+            "threads",
+            "concurrent_iterations",
+        ):
             if old["config"][field] != new["config"][field]:
                 raise ValueError(f"benchmark configuration mismatch: {field}")
         for field in ("compiler", "flags", "options", "target"):
@@ -70,6 +80,18 @@ def check_regression(
             mixed = report["results"]["clibmdbx"]["mixed_read_write"]
             if mixed["write_operations"] != 10000 or mixed["reader_threads"] != 3:
                 raise ValueError("mixed workload must complete all writes with three readers")
+            if mixed.get("workload") != "fixed-read-write-v1":
+                raise ValueError("mixed workload must use the fixed read/write protocol")
+            if mixed["read_operations"] != 3 * report["config"]["concurrent_iterations"]:
+                raise ValueError("mixed workload must complete every fixed reader operation")
+        old_mixed = old["results"]["clibmdbx"]["mixed_read_write"]
+        new_mixed = new["results"]["clibmdbx"]["mixed_read_write"]
+        if (
+            len(old_mixed["reader_digests"]) != 3
+            or not all(old_mixed["reader_digests"])
+            or old_mixed["reader_digests"] != new_mixed["reader_digests"]
+        ):
+            raise ValueError("mixed reader data mismatch")
     for name, field in (("mixed_read", "read_ops_per_second"), ("mixed_write", "write_ops_per_second")):
         ratios[name] = statistics.median(
             new["results"]["clibmdbx"]["mixed_read_write"][field]
