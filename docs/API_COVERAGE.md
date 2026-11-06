@@ -1,10 +1,16 @@
-# Official libmdbx 0.14.3 C API coverage
+# Official libmdbx 0.14.4 C API coverage
 
 This matrix accounts for all 171 `LIBMDBX_API` function declarations in the
 vendored stable header. “Wrapped” means the Python API calls that function or a
 strictly more general sibling directly. “Represented” means the capability is
 implemented safely through another public libmdbx primitive. “Excluded” is an
 intentional boundary, not an accidental omission.
+
+Safety boundary in 1.0.6: `MDBX_CP_OVERWRITE` is exported for identification but
+rejected by `Environment.copy()` until a formal engine release includes the
+upstream overwrite-copy failure-path fixes. Copying to a fresh path is supported.
+Rename uses `mdbx_dbi_stat()` before `mdbx_dbi_rename2()` to refresh stale native
+metadata (upstream libmdbx-devel #106).
 
 | C API family (all functions in vendored `mdbx.h`) | Status | Python surface or reason |
 | --- | --- | --- |

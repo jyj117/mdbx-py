@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import gzip
 import io
+import json
 import os
 import sys
 import tarfile
 import tempfile
+from datetime import datetime, timezone
 
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
@@ -108,13 +110,24 @@ class ReproducibleSdist(sdist):
         os.replace(temporary, archive_name)
 
 
+# Avoid upstream __DATE__/__TIME__, including on Debian's -Wdate-time builds.
+# SOURCE_DATE_EPOCH describes a reproducible build; otherwise use the pinned
+# source timestamp rather than the build machine's clock.
+with open(
+    os.path.join(os.path.dirname(__file__), "vendor", "libmdbx", "VERSION.json"), encoding="utf-8"
+) as version_file:
+    build_timestamp = json.load(version_file)["git_timestamp"]
+if "SOURCE_DATE_EPOCH" in os.environ:
+    build_timestamp = datetime.fromtimestamp(int(os.environ["SOURCE_DATE_EPOCH"]), timezone.utc).isoformat()
+
 define_macros = [
     # libmdbx normally forces its version/build data to default visibility even
     # for static builds.  In a CPython extension these are implementation
     # details; overriding the header's supported macro keeps the dynamic symbol
     # table limited to PyInit__core and avoids collisions with other bindings.
     ("__dll_export", ""),
-    ("MDBX_BUILD_METADATA", '"clibmdbx-1.0.5"'),
+    ("MDBX_BUILD_METADATA", '"clibmdbx-1.0.6"'),
+    ("MDBX_BUILD_TIMESTAMP", json.dumps(build_timestamp)),
     ("MDBX_BUILD_FLAGS", '"setuptools O3 LTO hidden-symbols"'),
     ("MDBX_ENV_CHECKPID", "1"),
     ("MDBX_TXN_CHECKOWNER", "1"),

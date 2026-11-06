@@ -4,12 +4,12 @@
   "serialNumber": "urn:uuid:db352a45-d9e9-47f3-aac5-e894110d2478",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-10-30T17:35:25Z",
+    "timestamp": "2026-11-06T00:00:00Z",
     "component": {
       "type": "library",
       "name": "clibmdbx",
-      "version": "1.0.5",
-      "purl": "pkg:pypi/clibmdbx@1.0.5",
+      "version": "1.0.6",
+      "purl": "pkg:pypi/clibmdbx@1.0.6",
       "licenses": [{"license": {"id": "Apache-2.0"}}],
       "externalReferences": [
         {"type": "vcs", "url": "https://github.com/jyj117/mdbx-py"},
@@ -21,15 +21,15 @@
     {
       "type": "library",
       "name": "libmdbx",
-      "version": "0.14.3",
-      "purl": "pkg:github/Mithril-mine/libmdbx@v0.14.3",
+      "version": "0.14.4",
+      "purl": "pkg:github/Mithril-mine/libmdbx@v0.14.4",
       "licenses": [{"license": {"id": "Apache-2.0"}}],
       "hashes": [
-        {"alg": "SHA-256", "content": "dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd"}
+        {"alg": "SHA-256", "content": "0dd6bf6048d5d208bc20d325cf93c8f88beda95802e9e3aa7958346611c36922"}
       ],
       "externalReferences": [
-        {"type": "vcs", "url": "https://github.com/Mithril-mine/libmdbx/tree/v0.14.3"},
-        {"type": "distribution", "url": "https://libmdbx.dqdkfa.ru/release/libmdbx-amalgamated-0.14.3.tar.xz"}
+        {"type": "vcs", "url": "https://github.com/Mithril-mine/libmdbx/tree/v0.14.4"},
+        {"type": "distribution", "url": "https://libmdbx.dqdkfa.ru/release/libmdbx-amalgamated-0.14.4.tar.xz"}
       ]
     },
     {
@@ -51,8 +51,8 @@
     }
   ],
   "dependencies": [
-    {"ref": "pkg:pypi/clibmdbx@1.0.5", "dependsOn": ["pkg:github/Mithril-mine/libmdbx@v0.14.3", "pkg:pypi/typing_extensions"]},
-    {"ref": "pkg:github/Mithril-mine/libmdbx@v0.14.3", "dependsOn": []},
+    {"ref": "pkg:pypi/clibmdbx@1.0.6", "dependsOn": ["pkg:github/Mithril-mine/libmdbx@v0.14.4", "pkg:pypi/typing_extensions"]},
+    {"ref": "pkg:github/Mithril-mine/libmdbx@v0.14.4", "dependsOn": []},
     {"ref": "pkg:pypi/typing_extensions", "dependsOn": []}
   ]
 }

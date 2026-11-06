@@ -19,9 +19,9 @@ def test_diagnostics_and_limits() -> None:
     assert diagnostics["binding_version"] == clibmdbx.__version__
     assert diagnostics["libmdbx"]["major"] == 0
     assert diagnostics["libmdbx"]["minor"] == 14
-    assert diagnostics["libmdbx"]["patch"] == 3
-    assert diagnostics["libmdbx"]["git_commit"] == "251562b2dc55266d8e6d0e6627ec88ecb410702f"
-    assert diagnostics["archive_sha256"] == "dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd"
+    assert diagnostics["libmdbx"]["patch"] == 4
+    assert diagnostics["libmdbx"]["git_commit"] == "716ce9d5ae5458fa1de44097dc6e8f80ed1e4809"
+    assert diagnostics["archive_sha256"] == "0dd6bf6048d5d208bc20d325cf93c8f88beda95802e9e3aa7958346611c36922"
     limits = clibmdbx.limits()
     assert limits["page_size_min"] <= limits["page_size_max"]
     assert limits["key_size_max"] > 0

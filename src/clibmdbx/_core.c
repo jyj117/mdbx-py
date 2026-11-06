@@ -23,11 +23,11 @@
 
 #include "mdbx.h"
 
-#define CLIBMDBX_VERSION "1.0.5"
-#define CLIBMDBX_RELEASE_TAG "v0.14.3"
-#define CLIBMDBX_RELEASE_COMMIT "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0"
-#define CLIBMDBX_AMALGAMATION_COMMIT "251562b2dc55266d8e6d0e6627ec88ecb410702f"
-#define CLIBMDBX_ARCHIVE_SHA256 "dbc4a791c44d3e51a8159eedfee0dedada7b21d46c22588f0fa99294983f33cd"
+#define CLIBMDBX_VERSION "1.0.6"
+#define CLIBMDBX_RELEASE_TAG "v0.14.4"
+#define CLIBMDBX_RELEASE_COMMIT "a032e40c1c06eaf695a163cfc32d4a01ffb8b26c"
+#define CLIBMDBX_AMALGAMATION_COMMIT "716ce9d5ae5458fa1de44097dc6e8f80ed1e4809"
+#define CLIBMDBX_ARCHIVE_SHA256 "0dd6bf6048d5d208bc20d325cf93c8f88beda95802e9e3aa7958346611c36922"
 
 typedef struct EnvObject EnvObject;
 typedef struct TxnObject TxnObject;
@@ -1319,6 +1319,15 @@ static PyObject *Env_copy(EnvObject *self, PyObject *args, PyObject *kwargs) {
     return NULL;
   if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "copy flags"))
     return NULL;
+  /* Upstream #58/#112: a failed overwrite copy can remove an existing
+     destination. Until a fixed formal engine release is embedded, reject
+     this opt-in mode before touching the destination; fresh-path copies
+     retain the normal native semantics. */
+  if (flags & MDBX_CP_OVERWRITE) {
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "MDBX_CP_OVERWRITE is disabled for libmdbx 0.14.4 safety; copy to a new path instead");
+    return NULL;
+  }
   if (!begin_env_operation(self))
     return NULL;
   int rc = native_copy_path(self->env, path, (MDBX_copy_flags_t)flags);
@@ -3368,7 +3377,18 @@ static PyObject *Db_rename(DbObject *self, PyObject *args) {
     PyBuffer_Release(&view);
     return NULL;
   }
-  int rc = mdbx_dbi_rename2(txn->txn, self->state->dbi, &name);
+  /* Upstream #106: rename in 0.14.4 can persist a stale tree descriptor
+     after an aborted write or a write in another process. The public stat
+     API refreshes that descriptor before rename reads it. Keep this cold
+     safety check even when a later engine also refreshes internally. */
+  MDBX_stat current_stat;
+  int rc = mdbx_dbi_stat(txn->txn, self->state->dbi, &current_stat, sizeof(current_stat));
+  if (rc != MDBX_SUCCESS) {
+    Py_DECREF(stored);
+    PyBuffer_Release(&view);
+    return raise_mdbx(rc, "mdbx_dbi_stat (before rename)");
+  }
+  rc = mdbx_dbi_rename2(txn->txn, self->state->dbi, &name);
   PyBuffer_Release(&view);
   if (rc != MDBX_SUCCESS) {
     Py_DECREF(stored);
@@ -4177,10 +4197,10 @@ PyMODINIT_FUNC PyInit__core(void) {
     return NULL;
   }
   if (MDBX_VERSION_MAJOR != 0 || MDBX_VERSION_MINOR != 14 || mdbx_version.major != 0 || mdbx_version.minor != 14 ||
-      mdbx_version.patch != 3 || mdbx_version.git.commit == NULL ||
+      mdbx_version.patch != 4 || mdbx_version.git.commit == NULL ||
       strcmp(mdbx_version.git.commit, CLIBMDBX_AMALGAMATION_COMMIT) != 0) {
     PyErr_Format(PyExc_ImportError,
-                 "clibmdbx was built for embedded libmdbx 0.14.3/%s but loaded %u.%u.%u/%s",
+                 "clibmdbx was built for embedded libmdbx 0.14.4/%s but loaded %u.%u.%u/%s",
                  CLIBMDBX_AMALGAMATION_COMMIT, (unsigned)mdbx_version.major, (unsigned)mdbx_version.minor,
                  (unsigned)mdbx_version.patch, mdbx_version.git.commit ? mdbx_version.git.commit : "unknown");
     return NULL;
@@ -4240,7 +4260,7 @@ PyMODINIT_FUNC PyInit__core(void) {
       PyModule_AddObjectRef(module, "Database", (PyObject *)&DbType) < 0 ||
       PyModule_AddObjectRef(module, "Cursor", (PyObject *)&CursorType) < 0 ||
       PyModule_AddStringConstant(module, "__version__", CLIBMDBX_VERSION) < 0 ||
-      PyModule_AddStringConstant(module, "LIBMDBX_VERSION", "0.14.3") < 0)
+      PyModule_AddStringConstant(module, "LIBMDBX_VERSION", "0.14.4") < 0)
     goto error;
 
   ADD_INT(module, MDBX_ENV_DEFAULTS);

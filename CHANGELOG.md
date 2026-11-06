@@ -3,6 +3,27 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
+## 1.0.6 - 2026-11-06
+
+- Embed official stable libmdbx 0.14.4, including GC tuning, reader error-code,
+  corrupted-page validation and Windows storage-placement fixes. No durability
+  defaults or data-format settings are changed.
+- Refresh a named table through the official stat API before renaming it.
+  This prevents stale aborted-write metadata from being committed by upstream
+  versions affected by libmdbx-devel #106. Add rollback, nested rollback and
+  reopen regression coverage; point-read hot paths are unchanged.
+- Reject `MDBX_CP_OVERWRITE` in `Environment.copy()` before accessing the
+  destination. The embedded formal release lacks the upstream overwrite-copy
+  failure-path fixes; copying to a fresh path remains supported. This explicit
+  safety restriction raises `NotImplementedError` instead of risking an old
+  backup. It will be reconsidered after a fixed formal upstream release.
+- Windows may now reject unsupported storage with `MDBX_EREMOTE`; do not bypass
+  the engine's placement checks. Version 0.14.5 engineering snapshots are not
+  included.
+- Use the supported native build-timestamp macro with `SOURCE_DATE_EPOCH` (or
+  the pinned source timestamp). This preserves strict Debian `-Wdate-time`
+  builds and avoids wall-clock-dependent engine metadata.
+
 ## 1.0.5 - 2026-10-31
 
 - Build arm64 macOS wheels on the supported macOS 15 runner; macOS 14
