@@ -49,6 +49,8 @@ jobs:
             --candidate-python "$(command -v python)" \
             --baseline-revision "$(git -C .benchmark-baseline rev-parse HEAD)" \
             --candidate-revision "$(git rev-parse HEAD)" \
+            --baseline-mdbx-commit "$(python -c 'import json; print(json.load(open(".benchmark-baseline/vendor/libmdbx/VERSION.json"))["git_commit"])')" \
+            --candidate-mdbx-commit "$(python -c 'import json; print(json.load(open("vendor/libmdbx/VERSION.json"))["git_commit"])')" \
             --output-dir benchmarks/results/ci/paired --cpu 0
       - name: Apply original performance gates to the paired candidate runs
         run: |

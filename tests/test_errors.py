@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import errno
-import os
 import pathlib
 
 import pytest
@@ -9,18 +7,13 @@ import pytest
 import clibmdbx
 
 
-def test_enospc_backup_preserves_source(env: clibmdbx.Environment) -> None:
-    # Upstream removes incomplete destinations after a failed copy. Only use
-    # /dev/full when the caller cannot unlink anything in /dev, including CI.
-    if os.name != "posix" or not pathlib.Path("/dev/full").exists() or os.access("/dev", os.W_OK):
-        pytest.skip("requires /dev/full and an unmodifiable /dev directory")
+def test_unsafe_backup_overwrite_preserves_source(env: clibmdbx.Environment, tmp_path) -> None:
+    # Overwrite is deliberately disabled. Real ENOSPC for the supported fresh-
+    # path copy is exercised by probe_disk_full.py on a limited filesystem.
     with env.write() as txn:
         txn.put(b"committed", b"source remains intact")
-    with pytest.raises(clibmdbx.DiskError) as caught:
-        env.copy("/dev/full", flags=clibmdbx.MDBX_CP_OVERWRITE)
-    assert caught.value.code == errno.ENOSPC
-    assert caught.value.what == "mdbx_env_copy"
-    assert caught.value.reason
+    with pytest.raises(NotImplementedError):
+        env.copy(tmp_path / "unused-copy", flags=clibmdbx.MDBX_CP_OVERWRITE)
     assert env.get(b"committed") == b"source remains intact"
     with env.write() as txn:
         txn.put(b"after", b"still writable")

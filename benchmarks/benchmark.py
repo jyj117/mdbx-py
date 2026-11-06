@@ -282,6 +282,7 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
     keys = populate(path, args.records, args.value_size)
     env = clibmdbx.Environment(path)
     stop = threading.Event()
+    read_iterations = args.concurrent_iterations
     cpu_start = started = 0
 
     def start_mixed() -> None:
@@ -291,18 +292,27 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
 
     barrier = threading.Barrier(args.threads, action=start_mixed)
     reader_counts = [0] * (args.threads - 1)
+    reader_digests = [""] * (args.threads - 1)
 
     def reader(index: int) -> None:
         txn = env.read()
         barrier.wait()
-        count = 0
-        while not stop.is_set():
-            value = txn.get(keys[count % len(keys)])
-            if value is None:
-                raise AssertionError("mixed reader lookup missed")
-            count += 1
-        txn.abort()
-        reader_counts[index] = count
+        digest = hashlib.sha256()
+        try:
+            for count in range(read_iterations):
+                value = txn.get(keys[count % len(keys)])
+                if value is None:
+                    raise AssertionError("mixed reader lookup missed")
+                if count % 1024 == 0:
+                    digest.update(value)
+            # Keep the original MVCC snapshot alive through all writes, even
+            # when this fixed read workload finishes first. Do not manufacture
+            # different amounts of extra work depending on writer scheduling.
+            stop.wait()
+            reader_counts[index] = read_iterations
+            reader_digests[index] = digest.hexdigest()
+        finally:
+            txn.abort()
 
     readers = [threading.Thread(target=reader, args=(i,)) for i in range(args.threads - 1)]
     for thread in readers:
@@ -328,6 +338,8 @@ def bench_mixed_clib(path: pathlib.Path, args: argparse.Namespace) -> dict[str, 
         raise AssertionError("a mixed reader did not complete its workload")
     return {
         "reader_threads": len(readers),
+        "workload": "fixed-read-write-v1",
+        "reader_digests": reader_digests,
         "read_operations": reads,
         "write_operations": write_operations,
         "seconds": elapsed / 1e9,

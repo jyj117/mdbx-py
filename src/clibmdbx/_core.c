@@ -23,7 +23,7 @@
 
 #include "mdbx.h"
 
-#define CLIBMDBX_VERSION "1.0.5"
+#define CLIBMDBX_VERSION "1.0.6"
 #define CLIBMDBX_RELEASE_TAG "v0.14.3"
 #define CLIBMDBX_RELEASE_COMMIT "f7a3a9323cacacfa9dc6137ae7a7252a67744ff0"
 #define CLIBMDBX_AMALGAMATION_COMMIT "251562b2dc55266d8e6d0e6627ec88ecb410702f"
@@ -1319,6 +1319,22 @@ static PyObject *Env_copy(EnvObject *self, PyObject *args, PyObject *kwargs) {
     return NULL;
   if (flags_obj != NULL && !parse_uint32(flags_obj, &flags, "copy flags"))
     return NULL;
+  /* Upstream #58/#112: a failed overwrite copy can remove an existing
+     destination. Until a fixed formal engine release is embedded, reject
+     this opt-in mode before touching the destination; fresh-path copies
+     retain the normal native semantics. */
+  if (flags & MDBX_CP_OVERWRITE) {
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "MDBX_CP_OVERWRITE is disabled for safety; copy to a new path instead");
+    return NULL;
+  }
+  /* Upstream #171: a compact-copy writer error may leave the producer
+     asleep forever. Reject this mode before filesystem access as well. */
+  if (flags & MDBX_CP_COMPACT) {
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "MDBX_CP_COMPACT is disabled for safety; copy to a new path with flags=0 instead");
+    return NULL;
+  }
   if (!begin_env_operation(self))
     return NULL;
   int rc = native_copy_path(self->env, path, (MDBX_copy_flags_t)flags);
@@ -3368,7 +3384,18 @@ static PyObject *Db_rename(DbObject *self, PyObject *args) {
     PyBuffer_Release(&view);
     return NULL;
   }
-  int rc = mdbx_dbi_rename2(txn->txn, self->state->dbi, &name);
+  /* Upstream #106: rename in 0.14.3 can persist a stale tree descriptor
+     after an aborted write or a write in another process. The public stat
+     API refreshes that descriptor before rename reads it. Keep this cold
+     safety check even when a later engine also refreshes internally. */
+  MDBX_stat current_stat;
+  int rc = mdbx_dbi_stat(txn->txn, self->state->dbi, &current_stat, sizeof(current_stat));
+  if (rc != MDBX_SUCCESS) {
+    Py_DECREF(stored);
+    PyBuffer_Release(&view);
+    return raise_mdbx(rc, "mdbx_dbi_stat (before rename)");
+  }
+  rc = mdbx_dbi_rename2(txn->txn, self->state->dbi, &name);
   PyBuffer_Release(&view);
   if (rc != MDBX_SUCCESS) {
     Py_DECREF(stored);

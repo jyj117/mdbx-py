@@ -244,3 +244,60 @@ def test_database_view_can_be_closed_after_environment(env: clibmdbx.Environment
     assert db.closed
     db.close()
     db.close()
+
+
+@pytest.mark.parametrize("abort_nested", [False, True])
+def test_rename_refreshes_table_after_aborted_write(tmp_path, abort_nested: bool) -> None:
+    path = tmp_path / "rename-after-abort"
+    expected = [(i.to_bytes(8, "big"), b"committed") for i in range(10)]
+    with clibmdbx.Environment(path, max_dbs=4) as env:
+        with env.write() as txn:
+            db = txn.open_db(b"original", create=True)
+            txn.put_many(expected, db)
+        parent = env.write() if abort_nested else None
+        txn = env.begin(write=True, parent=parent) if parent else env.write()
+        for i in range(10, 5010):
+            txn.put(i.to_bytes(8, "big"), b"x" * 200, db)
+        txn.abort()
+        if parent:
+            parent.abort()
+        # First native use of this DBI in the new write must be rename.
+        # Reading/stat'ing it in the test first would hide the upstream bug.
+        with env.write() as txn:
+            db.rename(txn, b"renamed")
+        with env.read() as txn, txn.cursor(db) as cursor:
+            assert txn.stat(db)["entries"] == len(expected)
+            assert list(cursor) == expected
+    with clibmdbx.Environment(path) as reopened, reopened.read() as txn:
+        db = txn.open_db(b"renamed")
+        with txn.cursor(db) as cursor:
+            assert list(cursor) == expected
+
+
+def test_copy_overwrite_rejected_before_destination_is_touched(env, tmp_path) -> None:
+    destination = tmp_path / "existing-backup"
+    original = b"existing-backup-must-survive" * 1024
+    destination.write_bytes(original)
+    for flags in (clibmdbx.MDBX_CP_OVERWRITE, clibmdbx.MDBX_CP_OVERWRITE | clibmdbx.MDBX_CP_COMPACT):
+        with pytest.raises(NotImplementedError, match="copy to a new path"):
+            env.copy(destination, flags=flags)
+        assert destination.read_bytes() == original
+    missing = tmp_path / "missing-backup"
+    with pytest.raises(NotImplementedError):
+        env.copy(missing, flags=clibmdbx.MDBX_CP_OVERWRITE)
+    assert not missing.exists()
+
+
+@pytest.mark.parametrize("extra_flags", [0, clibmdbx.MDBX_CP_DONT_FLUSH, clibmdbx.MDBX_CP_THROTTLE_MVCC])
+def test_unsafe_compact_copy_rejected_before_path_access(env, extra_flags) -> None:
+    class ForbiddenPath:
+        def __fspath__(self):
+            raise AssertionError("unsafe copy must reject before accessing its destination")
+
+    with env.write() as txn:
+        txn.put(b"source", b"must survive")
+    with pytest.raises(NotImplementedError, match="MDBX_CP_COMPACT.*flags=0"):
+        env.copy(ForbiddenPath(), flags=clibmdbx.MDBX_CP_COMPACT | extra_flags)
+    assert env.get(b"source") == b"must survive"
+    with env.write() as txn:
+        txn.put(b"after-rejection", b"still writable")

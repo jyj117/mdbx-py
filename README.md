@@ -10,9 +10,16 @@ directly. The extension embeds the official libmdbx 0.14.3 amalgamation, so a
 wheel contains libmdbx itself. Python typing compatibility uses `typing_extensions`.
 It does not use ctypes, CFFI, Cython, Rust, or a helper service.
 
-> **Stable release:** 1.0.5 deliberately uses a CPython-version-specific ABI
+> **Stable release:** 1.0.6 deliberately uses a CPython-version-specific ABI
 > for maximum hot-path performance. Public API compatibility follows Semantic
 > Versioning within the 1.x line.
+
+In 1.0.6, named-table rename refreshes metadata after aborted writes.
+`Environment.copy()` temporarily rejects `MDBX_CP_OVERWRITE` and
+`MDBX_CP_COMPACT` with `NotImplementedError`: the formal embedded engine lacks
+upstream fixes for destructive overwrite failures and compact-copy I/O hangs.
+Use a fresh destination with `flags=0`. Default point reads and durability
+settings are unchanged.
 
 ## Quick start
 

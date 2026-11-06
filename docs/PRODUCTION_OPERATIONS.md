@@ -206,3 +206,21 @@ write-lock-taking environment management operation behind an orphan candidate.
 The second must be run inside a disposable quota,
 loopback or tmpfs/container mount and writes until the real filesystem rejects
 I/O. Never point either command at production data.
+
+## Upstream 0.14.3 boundaries
+
+Only the formal 0.14.3 release is embedded; 0.14.5 engineering fixes are not
+silently imported. In 1.0.6, table rename refreshes its native record through
+`mdbx_dbi_stat()` to avoid upstream issue #106, and overwrite-copy is rejected
+before touching the destination (upstream #58/#112). Compact copy is also
+rejected because its writer error can strand the producer indefinitely
+(upstream #171). Use a fresh backup path with `flags=0`.
+
+Keep exactly one Environment per physical database per process, including
+path aliases. This is especially important on classic-fcntl platforms such as
+macOS: upstream issue #59 describes a rejected duplicate open releasing the
+live handle's locks. Default modern Linux OFD locking is not affected by that
+specific issue. A rejected duplicate open is not a valid recovery strategy.
+See the upstream stable ChangeLog for remaining fixes being prepared for
+0.14.5; do not interpret a patch release as a guarantee against every possible
+upstream engine defect.

@@ -6,6 +6,13 @@ strictly more general sibling directly. “Represented” means the capability i
 implemented safely through another public libmdbx primitive. “Excluded” is an
 intentional boundary, not an accidental omission.
 
+Safety boundary in 1.0.6: `MDBX_CP_OVERWRITE` and `MDBX_CP_COMPACT` are exported for identification but
+rejected by `Environment.copy()` until a formal engine release includes the
+upstream overwrite-copy and compact-copy failure-path fixes (#58/#112/#171).
+Copying to a fresh path with `flags=0` is supported.
+Rename uses `mdbx_dbi_stat()` before `mdbx_dbi_rename2()` to refresh stale native
+metadata (upstream libmdbx-devel #106).
+
 | C API family (all functions in vendored `mdbx.h`) | Status | Python surface or reason |
 | --- | --- | --- |
 | `mdbx_env_create`, `open`, `close_ex`, `delete`, `set/get_option`, `set_geometry`, `set/get_flags`, `get_path` | Wrapped | `Environment`, `delete_environment`, properties/options/geometry |

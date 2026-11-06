@@ -3,6 +3,31 @@
 This project follows Semantic Versioning and PEP 440. Released versions are
 immutable.
 
+## 1.0.6 - 2026-11-07
+
+- Refresh a named table through the official stat API before renaming it.
+  This prevents stale aborted-write metadata from being committed by upstream
+  versions affected by libmdbx-devel #106. Add rollback, nested rollback and
+  reopen regressions. Point-read hot paths are unchanged.
+- Reject `MDBX_CP_OVERWRITE` in `Environment.copy()` before accessing the
+  destination. Copying to a fresh path remains supported. This explicit safety
+  restriction raises `NotImplementedError` instead of risking an old backup
+  on native overwrite-copy failure paths; it will be reconsidered after a
+  fixed formal upstream release.
+- Also reject `MDBX_CP_COMPACT` before filesystem access: upstream #171 can
+  hang indefinitely after the compact-copy writer encounters an I/O failure.
+  Reproduced under real ENOSPC with a delayed writer start. Regular fresh-path
+  backups remain supported and their ENOSPC/atomicity checks are retained.
+- Retain the verified official libmdbx 0.14.3 pin. Staging 0.14.4 exposed a
+  macOS native RAM-query regression, so it is not included in this release.
+  No data-format or durability defaults are changed.
+- Use the supported build-timestamp macro with `SOURCE_DATE_EPOCH` or the
+  pinned source timestamp, preserving strict Debian `-Wdate-time` builds.
+- Compare benchmark engines against exact source pins and finish identical
+  fixed read/write counts, retaining snapshots through every write. Original
+  performance limits are unchanged; older unbounded-reader results remain
+  diagnostic evidence.
+
 ## 1.0.5 - 2026-10-31
 
 - Build arm64 macOS wheels on the supported macOS 15 runner; macOS 14

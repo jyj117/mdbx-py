@@ -13,6 +13,7 @@ import json
 import os
 import pathlib
 import platform
+import re
 import statistics
 import subprocess
 import tempfile
@@ -21,20 +22,43 @@ ROOT = pathlib.Path(__file__).resolve().parent
 WORKLOADS = ("one_shot_get", "short_transaction_get", "point_get", "batch_get", "cursor_scan")
 
 
-def check_regression(baseline: list[dict], candidate: list[dict]) -> dict:
+def check_regression(
+    baseline: list[dict], candidate: list[dict], engine_commits: tuple[str, str] | None = None
+) -> dict:
     if len(baseline) != len(candidate) or len(baseline) < 3:
         raise ValueError("at least three complete baseline/candidate pairs are required")
+    if engine_commits is not None and (
+        len(engine_commits) != 2 or any(not re.fullmatch(r"[0-9a-f]{40}", pin) for pin in engine_commits)
+    ):
+        raise ValueError("two exact libmdbx source commit pins are required")
     for old, new in zip(baseline, candidate, strict=True):
         for field in ("python", "machine", "platform"):
             if old["platform"][field] != new["platform"][field]:
                 raise ValueError(f"platform mismatch: {field}")
-        for field in ("records", "value_size", "iterations", "warmup", "cursor_repeats", "cpu", "path"):
+        for field in (
+            "records",
+            "value_size",
+            "iterations",
+            "warmup",
+            "cursor_repeats",
+            "cpu",
+            "path",
+            "threads",
+            "concurrent_iterations",
+        ):
             if old["config"][field] != new["config"][field]:
                 raise ValueError(f"benchmark configuration mismatch: {field}")
         for field in ("compiler", "flags", "options", "target"):
             if old["diagnostics"]["build"][field] != new["diagnostics"]["build"][field]:
                 raise ValueError(f"native build mismatch: {field}")
-        if old["diagnostics"]["libmdbx"] != new["diagnostics"]["libmdbx"]:
+        if engine_commits is not None:
+            for report, reference, pin in zip((old, new), (baseline[0], candidate[0]), engine_commits, strict=True):
+                info = report["diagnostics"]["libmdbx"]
+                if info.get("git_commit") != pin:
+                    raise ValueError("unexpected bundled libmdbx source commit")
+                if info != reference["diagnostics"]["libmdbx"]:
+                    raise ValueError("libmdbx metadata changed between rounds")
+        elif old["diagnostics"]["libmdbx"] != new["diagnostics"]["libmdbx"]:
             raise ValueError("bundled libmdbx mismatch")
         for field in WORKLOADS:
             if old["results"]["clibmdbx"][field]["sample_digest"] != new["results"]["clibmdbx"][field]["sample_digest"]:
@@ -56,6 +80,18 @@ def check_regression(baseline: list[dict], candidate: list[dict]) -> dict:
             mixed = report["results"]["clibmdbx"]["mixed_read_write"]
             if mixed["write_operations"] != 10000 or mixed["reader_threads"] != 3:
                 raise ValueError("mixed workload must complete all writes with three readers")
+            if mixed.get("workload") != "fixed-read-write-v1":
+                raise ValueError("mixed workload must use the fixed read/write protocol")
+            if mixed["read_operations"] != 3 * report["config"]["concurrent_iterations"]:
+                raise ValueError("mixed workload must complete every fixed reader operation")
+        old_mixed = old["results"]["clibmdbx"]["mixed_read_write"]
+        new_mixed = new["results"]["clibmdbx"]["mixed_read_write"]
+        if (
+            len(old_mixed["reader_digests"]) != 3
+            or not all(old_mixed["reader_digests"])
+            or old_mixed["reader_digests"] != new_mixed["reader_digests"]
+        ):
+            raise ValueError("mixed reader data mismatch")
     for name, field in (("mixed_read", "read_ops_per_second"), ("mixed_write", "write_ops_per_second")):
         ratios[name] = statistics.median(
             new["results"]["clibmdbx"]["mixed_read_write"][field]
@@ -96,10 +132,15 @@ def main() -> None:
     parser.add_argument("--candidate-python", required=True)
     parser.add_argument("--baseline-revision", required=True)
     parser.add_argument("--candidate-revision", required=True)
+    parser.add_argument("--baseline-mdbx-commit")
+    parser.add_argument("--candidate-mdbx-commit")
     parser.add_argument("--output-dir", type=pathlib.Path, required=True)
     parser.add_argument("--rounds", type=int, default=6)
     parser.add_argument("--cpu", type=int, default=0)
     args = parser.parse_args()
+    if bool(args.baseline_mdbx_commit) != bool(args.candidate_mdbx_commit):
+        parser.error("both libmdbx source commit pins must be supplied together")
+    pins = (args.baseline_mdbx_commit, args.candidate_mdbx_commit) if args.baseline_mdbx_commit else None
     if args.rounds < 3:
         parser.error("at least three rounds are required")
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -139,7 +180,7 @@ def main() -> None:
                 print(f"completed {name} round {round_index + 1}", flush=True)
                 if hashlib.sha256(data_path.read_bytes()).hexdigest() != data_hash:
                     raise RuntimeError("the shared read fixture was modified")
-        result = check_regression(reports["baseline"], reports["candidate"])
+        result = check_regression(reports["baseline"], reports["candidate"], pins)
         result.update(
             {
                 "baseline_revision": args.baseline_revision,
@@ -150,6 +191,7 @@ def main() -> None:
                 "platform": platform.platform(),
                 "allowed_cpus": sorted(os.sched_getaffinity(0)),
                 "cpu": args.cpu,
+                "expected_engine_commits": pins,
             }
         )
         (args.output_dir / "comparison.json").write_text(json.dumps(result, indent=2, sort_keys=True))
